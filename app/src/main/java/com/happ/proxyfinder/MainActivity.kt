@@ -729,7 +729,11 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                     DetailLine("Статус", item.checkStatus)
                     DetailLine("Источник", item.source)
                     DetailLine("Последняя проверка", item.checkedAt?.let { java.text.SimpleDateFormat("dd.MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "Ещё не проверялся")
-                    DetailLine("Оценка", if (item.isTcpReachable) "Оценка основана на TCP-задержке, не на скорости туннеля" else "Пока недостаточно данных")
+                    DetailLine("Оценка", when {
+                        item.isTunnelVerified -> "Подтверждён ответ HTTP 204 через прокси; это задержка, не замер пропускной способности"
+                        item.checkStatus.startsWith("TCP доступен") -> "Открытый TCP-порт; работа туннеля и скорость не проверены"
+                        else -> "Пока недостаточно данных"
+                    })
                     DetailLine("Конфигурация", item.rawConfig.take(100) + if (item.rawConfig.length > 100) "…" else "")
                 }
             }
