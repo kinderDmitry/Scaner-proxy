@@ -179,12 +179,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
-    var ipRange by remember { mutableStateOf("192.168.1.0/24") }
-    var ipPorts by remember { mutableStateOf("443, 1080, 3128, 4145, 8080, 8081, 8388, 8443") }
-    var authorizedScan by remember { mutableStateOf(false) }
-    var ipScanning by remember { mutableStateOf(false) }
-    var ipScanStatus by remember { mutableStateOf("") }
-    var ipResults by remember { mutableStateOf(emptyList<OpenEndpoint>()) }
+    var scanFilter by remember { mutableStateOf("Все типы") }
     var errorMessage by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -206,15 +201,23 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 val fetched = repo.fetch { name ->
                     withContext(Dispatchers.Main) { sourceProgress = name }
                 }
-                val oldFavorites = allItems.filter { it.favorite }.associateBy { it.id }
-                val merged = (fetched.items + oldFavorites.values).distinctBy { it.rawConfig }
+                val matchesFilter: (ProxyItem) -> Boolean = { item ->
+                    scanFilter == "Все типы" || item.protocol.equals(scanFilter, ignoreCase = true)
+                }
+                val matchedItems = fetched.items.filter(matchesFilter)
+                val oldFavorites = allItems.filter { it.favorite && matchesFilter(it) }.associateBy { it.id }
+                val merged = (matchedItems + oldFavorites.values).distinctBy { it.rawConfig }
                     .map { item -> oldFavorites[item.id]?.let { item.copy(favorite = true) } ?: item }
                     .take(2500)
                 persist(merged)
-                sourceStatus = "Получено ${fetched.items.size} уникальных конфигураций"
+                sourceStatus = "Получено ${matchedItems.size} конфигураций по фильтру «$scanFilter»"
                 sourceProgress = "Источники: ${fetched.sourceCounts.count { it.value > 0 }}/${fetched.sourceCounts.size} отвечают"
-                if (fetched.items.isEmpty()) {
-                    errorMessage = "Источники не ответили или не содержат поддерживаемых ссылок. Проверь подключение и повтори попытку."
+                if (matchedItems.isEmpty()) {
+                    errorMessage = if (fetched.items.isEmpty()) {
+                        "Источники не ответили или не содержат поддерживаемых конфигураций. Проверь подключение и повтори попытку."
+                    } else {
+                        "По фильтру «$scanFilter» конфигураций не найдено. Выбери «Все типы» или повтори позже."
+                    }
                 } else {
                     val batch = merged.filter { !it.isChecked }.take(48)
                     if (batch.isNotEmpty()) {
@@ -252,34 +255,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    fun startSelectedScan() {
-        if (loading || ipScanning) return
-        if (scanMode == "IP и порты") {
-            if (!authorizedScan) {
-                errorMessage = "Подтверди разрешение на проверку выбранной сети."
-                return
-            }
-            ipScanning = true
-            ipResults = emptyList()
-            ipScanStatus = "Подготовка диапазона…"
-            scope.launch {
-                try {
-                    val result = repo.scanAuthorizedRange(ipRange, ipPorts) { progress ->
-                        withContext(Dispatchers.Main) { ipScanStatus = progress }
-                    }
-                    ipResults = result.endpoints
-                    ipScanStatus = result.message
-                } catch (_: Exception) {
-                    ipScanStatus = "Не удалось проверить диапазон. Проверь IPv4/CIDR и список портов."
-                } finally {
-                    ipScanning = false
-                }
-            }
-        } else {
-            scan()
-        }
-    }
-
     val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
     val countries = listOf("Все страны") + allItems.map { it.country }.filter { it.isNotBlank() }.distinct().sorted()
     val visible = allItems.filter { item ->
@@ -314,7 +289,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 }
             }
             item(key = "hero") {
-                HeroPanel(loading = loading || ipScanning, checkingCount = checkingCount, onScan = { startSelectedScan() }, enabled = !loading && !ipScanning)
+                HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
             }
             item(key = "backgroundMonitor") {
                 Column(
@@ -349,89 +324,38 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Surface).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("РЕЖИМ СКАНИРОВАНИЯ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf("IP и порты", "Общедоступные прокси").forEach { mode ->
-                            val selected = scanMode == mode
-                            Surface(
-                                modifier = Modifier.weight(1f).clickable(enabled = !loading && !ipScanning) { scanMode = mode; errorMessage = "" },
-                                color = if (selected) Color(0xFF123B5A) else SurfaceRaised,
-                                shape = RoundedCornerShape(11.dp),
-                                border = BorderStroke(1.dp, if (selected) Blue else Line)
-                            ) {
-                                Text(
-                                    mode, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                                    color = if (selected) Blue else TextPrimary, fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
+                    Text("ЧТО ИСКАТЬ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text("Выбери тип прокси. Вводить IP и порты не нужно: поиск идёт по общедоступным источникам конфигураций.", color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                    val scanFilters = listOf("Все типы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
+                    scanFilters.chunked(3).forEach { rowFilters ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                            rowFilters.forEach { filter ->
+                                val selected = scanFilter == filter
+                                Surface(
+                                    modifier = Modifier.weight(1f).clickable(enabled = !loading) {
+                                        scanFilter = filter
+                                        errorMessage = ""
+                                    },
+                                    color = if (selected) Color(0xFF123B5A) else SurfaceRaised,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, if (selected) Blue else Line)
+                                ) {
+                                    Text(filter, modifier = Modifier.padding(horizontal = 5.dp, vertical = 11.dp),
+                                        color = if (selected) Blue else TextPrimary, fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1)
+                                }
                             }
+                            repeat(3 - rowFilters.size) { Spacer(Modifier.weight(1f)) }
                         }
-                    }
-                    if (scanMode == "IP и порты") {
-                        Text("Укажи только сеть или адреса, которые ты вправе проверять. Максимум 256 адресов и 8 портов за запуск.", color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
-                        OutlinedTextField(
-                            value = ipRange, onValueChange = { ipRange = it }, enabled = !ipScanning,
-                            label = { Text("IPv4 или CIDR") }, placeholder = { Text("192.168.1.0/24") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
-                        )
-                        OutlinedTextField(
-                            value = ipPorts, onValueChange = { ipPorts = it }, enabled = !ipScanning,
-                            label = { Text("TCP-порты через запятую (до 8)") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = authorizedScan, onCheckedChange = { authorizedScan = it }, enabled = !ipScanning, colors = CheckboxDefaults.colors(checkedColor = Blue, uncheckedColor = TextMuted))
-                            Text("У меня есть разрешение на проверку этой сети", color = TextPrimary, fontSize = 11.sp, lineHeight = 15.sp)
-                        }
-                    } else {
-                        Text("Поиск общедоступных конфигураций и проверка доступности через generate_204 для поддерживаемых протоколов.", color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
                     }
                     Button(
-                        onClick = { startSelectedScan() },
-                        enabled = !loading && !ipScanning && (scanMode != "IP и порты" || authorizedScan),
+                        onClick = { scan() }, enabled = !loading,
                         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))
                     ) {
-                        Icon(if (scanMode == "IP и порты") Icons.Default.Radar else Icons.Default.Search, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(if (loading || ipScanning) "Сканирование…" else "Сканировать", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            if (ipScanStatus.isNotBlank() || ipResults.isNotEmpty()) {
-                item(key = "ipScanResults") {
-                    Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(13.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Найденные открытые TCP-порты", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            if (ipScanning) CircularProgressIndicator(Modifier.size(18.dp), color = Blue, strokeWidth = 2.dp)
-                        }
-                        Text(ipScanStatus, color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
-                        ipResults.take(30).forEach { endpoint ->
-                            Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(SurfaceRaised).padding(horizontal = 10.dp, vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.CheckCircle, null, tint = Green, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text("${endpoint.host}:${endpoint.port}", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(endpoint.portHint, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    Text("${endpoint.latencyMs} мс", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    IconButton(onClick = { onCopy("${endpoint.host}:${endpoint.port}") }, modifier = Modifier.size(26.dp)) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "Копировать IP и порт", tint = Blue, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            }
-                        }
-                        if (ipResults.size > 30) Text("Показаны первые 30 из ${ipResults.size} результатов", color = TextMuted, fontSize = 10.sp)
-                        Text("Открытый порт не означает, что на нём работает прокси или что это готовая конфигурация HAPP.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                        Text(if (loading) "Сканирование…" else "Сканировать", fontWeight = FontWeight.Bold)
                     }
                 }
             }
