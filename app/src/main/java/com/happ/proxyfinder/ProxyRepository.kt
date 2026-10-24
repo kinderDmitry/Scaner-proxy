@@ -1,0 +1,389 @@
+package com.happ.proxyfinder
+
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.URL
+import java.net.URI
+import java.util.Base64
+import java.util.Locale
+
+/** Fetches public configuration feeds. Feed contents are untrusted input and are never executed. */
+class ProxyRepository(context: Context) {
+    private val prefs = context.getSharedPreferences("proxy_finder", Context.MODE_PRIVATE)
+
+    private val sources = listOf(
+        Source("Morpheus · Лучшие", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"),
+        Source("Morpheus · Компактный", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt"),
+        Source("GFP · VLESS", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt"),
+        Source("GFP · VMess", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vmess.txt"),
+        Source("GFP · Trojan", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/trojan.txt"),
+        Source("GFP · Shadowsocks", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/ss.txt"),
+        Source("GFP · Hysteria2", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/hy2.txt")
+    )
+
+    suspend fun fetch(onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
+        val results = coroutineScope {
+            sources.map { source -> async {
+                onSource(source.name)
+                val parsed = runCatching { fetchSource(source) }.getOrDefault(emptyList())
+                source.name to parsed
+            } }.awaitAll()
+        }
+        val sourceCounts = results.associate { it.first to it.second.size }
+        val merged = linkedMapOf<String, ProxyItem>()
+        results.flatMap { it.second }.forEach { item ->
+            val key = item.rawConfig.trim()
+            if (key.isNotEmpty() && !merged.containsKey(key)) merged[key] = item
+        }
+        val favorites = loadFavorites()
+        FetchResult(merged.values.map { it.copy(favorite = favorites.contains(it.id)) }, sourceCounts)
+    }
+
+    private fun fetchSource(source: Source): List<ProxyItem> {
+        val connection = URL(source.url).openConnection().apply {
+            connectTimeout = 6500
+            readTimeout = 8500
+            setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.0 (Android)")
+            setRequestProperty("Accept", "text/plain,*/*")
+        }
+        val text = connection.getInputStream().use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            var total = 0
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                total += n
+                if (total > MAX_SOURCE_BYTES) break
+                out.write(buffer, 0, n)
+            }
+            out.toString(Charsets.UTF_8.name())
+        }
+        val decoded = decodeSubscriptionIfNeeded(text)
+        val seen = HashSet<String>()
+        return decoded.lineSequence().take(MAX_LINES).mapNotNull { raw ->
+            val line = raw.trim().substringBefore(" | ").trim()
+            ConfigParser.parseConfig(line, source.name)
+        }.filter { seen.add(it.rawConfig) }.toList()
+    }
+
+    private fun decodeSubscriptionIfNeeded(text: String): String {
+        if (text.contains(Regex("(?im)^\\s*(vless|vmess|trojan|ss|socks|hysteria2|hy2)://"))) return text
+        val compact = text.trim().replace("\\s".toRegex(), "")
+        if (compact.length < 16 || !compact.matches(Regex("[A-Za-z0-9+/=_-]+"))) return text
+        return runCatching {
+            val padded = compact.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }
+            String(Base64.getDecoder().decode(padded), Charsets.UTF_8).takeIf { it.contains("://") } ?: text
+        }.getOrDefault(text)
+    }
+
+
+    /**
+     * Probes a small, explicitly supplied IPv4 range only. This is not an internet-wide scanner:
+     * the range is capped at /24 (256 addresses), port count is capped, and concurrency is bounded.
+     * Use only on networks/hosts the user owns or is authorized to assess.
+     */
+    suspend fun scanAuthorizedRange(
+        rangeInput: String,
+        portsInput: String,
+        onProgress: suspend (String) -> Unit
+    ): EndpointScanResult = withContext(Dispatchers.IO) {
+        val addresses = Ipv4RangeParser.parse(rangeInput)
+            ?: return@withContext EndpointScanResult(emptyList(), "Укажи корректный IPv4-адрес или CIDR не шире /24")
+        val ports = portsInput.split(',', ' ', ';', '\n', '\t')
+            .mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in 1..65535 }.distinct().take(8)
+        if (ports.isEmpty()) return@withContext EndpointScanResult(emptyList(), "Укажи от 1 до 8 TCP-портов")
+        val tasks = addresses.flatMap { ip -> ports.map { port -> ip to port } }
+        val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val gate = Semaphore(16)
+        coroutineScope {
+            tasks.map { (ip, port) -> async {
+                gate.withPermit {
+                    val started = System.nanoTime()
+                    val open = runCatching {
+                        Socket().use { socket ->
+                            socket.tcpNoDelay = true
+                            socket.connect(InetSocketAddress(ip, port), 900)
+                        }
+                        true
+                    }.getOrDefault(false)
+                    val count = completed.incrementAndGet()
+                    if (open) {
+                        found.add(OpenEndpoint(ip, port, ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)))
+                    }
+                    if (count % 12 == 0 || count == tasks.size) onProgress("Проверено $count из ${tasks.size} адресов/портов · открыто ${found.size}")
+                }
+            } }.awaitAll()
+        }
+        EndpointScanResult(found.sortedWith(compareBy<OpenEndpoint> { it.latencyMs }.thenBy { it.host }.thenBy { it.port }),
+            "Завершено: ${tasks.size} проверок · открыто ${found.size} TCP-портов. Это не подтверждает наличие прокси или рабочий туннель.")
+    }
+
+
+    suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
+        if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = System.currentTimeMillis())
+        val started = System.nanoTime()
+        try {
+            Socket().use { socket -> socket.tcpNoDelay = true; socket.connect(InetSocketAddress(item.host, item.port), 2600) }
+            val latency = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+            item.copy(checkStatus = "TCP доступен · туннель не проверен", latencyMs = latency, checkedAt = System.currentTimeMillis())
+        } catch (_: Exception) {
+            item.copy(checkStatus = "TCP недоступен", latencyMs = null, checkedAt = System.currentTimeMillis())
+        }
+    }
+
+    suspend fun checkBatch(items: List<ProxyItem>, onResult: suspend (ProxyItem) -> Unit): List<ProxyItem> = coroutineScope {
+        val gate = Semaphore(12)
+        items.map { item -> async {
+            gate.withPermit { check(item).also { onResult(it) } }
+        } }.awaitAll()
+    }
+
+    suspend fun resolveCountries(items: List<ProxyItem>, onResolved: suspend (ProxyItem) -> Unit): List<ProxyItem> = withContext(Dispatchers.IO) {
+        val cached = runCatching {
+            val json = JSONObject(prefs.getString("geo_cache", "{}"))
+            buildMap<String, Pair<String, String>> {
+                json.keys().forEach { host ->
+                    val value = json.optJSONObject(host) ?: return@forEach
+                    val country = value.optString("country")
+                    if (country.isNotBlank()) put(host, country to value.optString("code"))
+                }
+            }
+        }.getOrDefault(emptyMap())
+        val candidates = items.filter { it.country.isBlank() && isIpv4(it.host) && !cached.containsKey(it.host) }
+            .distinctBy { it.host }.take(MAX_GEO_LOOKUPS)
+        val updated = java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>()
+        val gate = Semaphore(3)
+        coroutineScope {
+            candidates.map { item -> async {
+                gate.withPermit {
+                    runCatching {
+                        val url = URL("https://ipwho.is/${item.host}?fields=success,country,country_code")
+                        val conn = url.openConnection().apply { connectTimeout = 2200; readTimeout = 2200; setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.0") }
+                        val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText().take(16_384) })
+                        if (json.optBoolean("success")) {
+                            val country = json.optString("country").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                            val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                            if (country.isNotBlank()) updated[item.host] = country to code
+                        }
+                    }
+                }
+            } }.awaitAll()
+        }
+        val allGeo = cached + updated
+        val cacheJson = JSONObject()
+        allGeo.forEach { (host, value) -> cacheJson.put(host, JSONObject().put("country", value.first).put("code", value.second)) }
+        prefs.edit().putString("geo_cache", cacheJson.toString()).apply()
+        val resolved = items.map { item ->
+            val country = allGeo[item.host]
+            if (country == null || item.country.isNotBlank()) item else item.copy(country = country.first, countryCode = country.second)
+        }
+        resolved.filter { it.country.isNotBlank() }.forEach { onResolved(it) }
+        resolved
+    }
+
+    private fun isIpv4(host: String): Boolean {
+        val octets = host.split('.').mapNotNull { it.toIntOrNull() }
+        if (octets.size != 4 || octets.any { it !in 0..255 }) return false
+        if (octets[0] == 0 || octets[0] == 10 || octets[0] == 127 || octets[0] >= 224) return false
+        if (octets[0] == 169 && octets[1] == 254) return false
+        if (octets[0] == 172 && octets[1] in 16..31) return false
+        if (octets[0] == 192 && octets[1] == 168) return false
+        if (octets[0] == 100 && octets[1] in 64..127) return false
+        return true
+    }
+
+    fun loadFavorites(): Set<String> = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
+    fun saveFavorites(ids: Set<String>) { prefs.edit().putStringSet("favorites", ids).apply() }
+
+    fun saveSnapshot(items: List<ProxyItem>) {
+        val arr = JSONArray()
+        items.take(MAX_SNAPSHOT).forEach { item ->
+            arr.put(JSONObject().apply {
+                put("id", item.id); put("host", item.host); put("port", item.port); put("protocol", item.protocol)
+                put("source", item.source); put("rawConfig", item.rawConfig); put("status", item.checkStatus)
+                put("latency", item.latencyMs ?: -1); put("favorite", item.favorite); put("checked", item.checkedAt ?: 0L)
+                put("title", item.title); put("country", item.country); put("countryCode", item.countryCode)
+            })
+        }
+        prefs.edit().putString("snapshot", arr.toString()).apply()
+    }
+
+    fun loadSnapshot(): List<ProxyItem> = runCatching {
+        val arr = JSONArray(prefs.getString("snapshot", "[]"))
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            ProxyItem(
+                id = o.getString("id"), host = o.getString("host"), port = o.getInt("port"), protocol = o.getString("protocol"),
+                source = o.getString("source"), rawConfig = o.getString("rawConfig"), checkStatus = o.optString("status", "Не проверен"),
+                latencyMs = o.optInt("latency", -1).takeIf { it >= 0 }, favorite = o.optBoolean("favorite"),
+                checkedAt = o.optLong("checked").takeIf { it > 0 }, title = o.optString("title"),
+                country = o.optString("country"), countryCode = o.optString("countryCode")
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    private data class Source(val name: String, val url: String)
+
+    companion object {
+        private const val MAX_SOURCE_BYTES = 1_800_000
+        private const val MAX_LINES = 20_000
+        private const val MAX_SNAPSHOT = 2_500
+        private const val MAX_GEO_LOOKUPS = 24
+    }
+}
+
+
+internal object ConfigParser {
+    fun parseConfig(rawLine: String, sourceName: String = "Источник"): ProxyItem? {
+        val line = rawLine.trim().removePrefix("\uFEFF")
+        if (line.isBlank() || line.startsWith("#") || line.startsWith("//")) return null
+        val match = Regex("^(vless|vmess|trojan|ss|socks|socks5|hysteria2|hy2)://", RegexOption.IGNORE_CASE).find(line) ?: return null
+        val scheme = match.groupValues[1].lowercase(Locale.ROOT)
+        val protocol = when (scheme) {
+            "hy2", "hysteria2" -> "Hysteria2"
+            "ss" -> "Shadowsocks"
+            "socks", "socks5" -> "SOCKS5"
+            else -> scheme.uppercase(Locale.ROOT)
+        }
+        val endpoint = runCatching {
+            when (scheme) {
+                "vmess" -> {
+                    val payload = line.substringAfter("vmess://").substringBefore('#')
+                    val json = JSONObject(String(Base64.getDecoder().decode(padBase64(payload)), Charsets.UTF_8))
+                    json.optString("add") to json.optString("port").toIntOrNull()
+                }
+                "ss" -> parseShadowsocksEndpoint(line.substringAfter("ss://"))
+                else -> {
+                    val uri = URI(line)
+                    val host = uri.host ?: run {
+                        val authority = line.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#').substringAfterLast('@')
+                        authority.substringBeforeLast(':').removePrefix("[").removeSuffix("]")
+                    }
+                    val port = if (uri.port > 0) uri.port else {
+                        val authority = line.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#').substringAfterLast('@')
+                        authority.substringAfterLast(':').toIntOrNull() ?: -1
+                    }
+                    host to port
+                }
+            }
+        }.getOrNull() ?: return null
+        val host = endpoint.first.trim().removePrefix("[").removeSuffix("]")
+        val port = endpoint.second ?: -1
+        if (host.isBlank() || port !in 1..65535 || host.length > 253) return null
+        val title = runCatching { line.substringAfter('#', "").substringBefore('?').let { java.net.URLDecoder.decode(it, "UTF-8") } }.getOrDefault("")
+        return ProxyItem(
+            id = stableId(line), host = host, port = port, protocol = protocol,
+            source = sourceName, rawConfig = line, title = title.take(48),
+            checkStatus = "Не проверен"
+        )
+    }
+
+    private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
+        val decodedPart = if (!payload.substringBefore('@').contains(':') && !payload.contains('@')) {
+            runCatching { String(Base64.getDecoder().decode(padBase64(payload.substringBefore('#'))), Charsets.UTF_8) }.getOrNull() ?: payload
+        } else payload
+        val authority = decodedPart.substringAfterLast('@').substringBefore('?').substringBefore('#')
+        val hostPort = if (authority.startsWith("[")) {
+            val close = authority.indexOf(']')
+            if (close < 0) return null
+            authority.substring(1, close) to authority.substring(close + 2).toIntOrNull()
+        } else authority.substringBeforeLast(':') to authority.substringAfterLast(':').toIntOrNull()
+        return hostPort.first to (hostPort.second ?: return null)
+    }
+
+    private fun padBase64(value: String): String {
+        val normalized = value.replace('-', '+').replace('_', '/')
+        return normalized + "=".repeat((4 - normalized.length % 4) % 4)
+    }
+
+    private fun stableId(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8)).take(12).joinToString("") { "%02x".format(it) }
+}
+
+
+/** Validates a deliberately bounded IPv4 range for opt-in, authorized diagnostics. */
+internal object Ipv4RangeParser {
+    fun parse(input: String): List<String>? {
+        val parts = input.trim().split('/')
+        if (parts.size !in 1..2) return null
+        val base = ipv4ToLong(parts[0]) ?: return null
+        val prefix = if (parts.size == 2) parts[1].toIntOrNull() ?: return null else 32
+        if (prefix !in 24..32) return null
+        val hostBits = 32 - prefix
+        val count = 1 shl hostBits
+        val mask = (0xFFFF_FFFFL shl hostBits) and 0xFFFF_FFFFL
+        val network = base and mask
+        return (0 until count).map { offset -> longToIpv4(network + offset) }
+    }
+
+    private fun ipv4ToLong(value: String): Long? {
+        val octets = value.split('.')
+        if (octets.size != 4) return null
+        val nums = octets.map { it.toIntOrNull() ?: return null }
+        if (nums.any { it !in 0..255 }) return null
+        return nums.fold(0L) { acc, n -> (acc shl 8) or n.toLong() }
+    }
+
+    private fun longToIpv4(value: Long): String = listOf(24, 16, 8, 0)
+        .joinToString(".") { shift -> ((value shr shift) and 255).toString() }
+}
+
+data class FetchResult(val items: List<ProxyItem>, val sourceCounts: Map<String, Int>)
+data class OpenEndpoint(val host: String, val port: Int, val latencyMs: Int) {
+    /** Port-number hint only; it is not protocol detection. */
+    val portHint: String get() = when (port) {
+        1080 -> "Часто используется для SOCKS-прокси · не подтверждено"
+        3128 -> "Часто используется для HTTP-прокси · не подтверждено"
+        4145 -> "Встречается у SOCKS-прокси · не подтверждено"
+        8080, 8081, 8888 -> "HTTP / веб-сервис · назначение не подтверждено"
+        8118 -> "Часто используется для HTTP-прокси · не подтверждено"
+        8388 -> "Часто используется Shadowsocks · не подтверждено"
+        443, 2053, 2083, 2087, 2096, 8443 -> "TLS/HTTPS или прокси-транспорт · не подтверждено"
+        9050, 9150 -> "Часто используется SOCKS для Tor · не подтверждено"
+        else -> "Открытый TCP-порт · протокол неизвестен"
+    }
+}
+data class EndpointScanResult(val endpoints: List<OpenEndpoint>, val message: String)
+
+data class ProxyItem(
+    val id: String,
+    val host: String,
+    val port: Int,
+    val protocol: String,
+    val source: String,
+    val rawConfig: String,
+    val checkStatus: String = "Не проверен",
+    val latencyMs: Int? = null,
+    val favorite: Boolean = false,
+    val checkedAt: Long? = null,
+    val title: String = "",
+    val country: String = "",
+    val countryCode: String = ""
+) {
+    val isTcpReachable: Boolean get() = checkStatus.startsWith("TCP доступен")
+    val isChecked: Boolean get() = checkedAt != null
+    val qualityScore: Int get() {
+        if (!isTcpReachable || latencyMs == null) return 0
+        val latencyScore = when {
+            latencyMs < 100 -> 90
+            latencyMs < 250 -> 80
+            latencyMs < 500 -> 65
+            latencyMs < 900 -> 45
+            else -> 25
+        }
+        return latencyScore
+    }
+}
