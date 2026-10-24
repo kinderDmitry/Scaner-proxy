@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
                         },
                         onBulkShare = { items ->
-                            val payload = items.distinctBy { it.rawConfig }.joinToString("\n") { namedConfigForImport(it) }
+                            val payload = "#subscription-ping-onopen-enabled: 1\n" + items.distinctBy { it.rawConfig }.joinToString("\n") { namedConfigForImport(it) }
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, payload)
