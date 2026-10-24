@@ -179,7 +179,7 @@ class ProxyRepository(private val context: Context) {
         coroutineScope {
             tasks.map { (ip, port) -> async {
                 gate.withPermit {
-                    probeLocalEndpoint(ip, port)?.let(found::add)
+                    probeLocalEndpoint(ip, port, wifiNetwork)?.let(found::add)
                     val count = completed.incrementAndGet()
                     if (count % 100 == 0 || count == tasks.size) {
                         onProgress("Локальная сеть: проверено $count/${tasks.size} адресов и портов · найдено ${found.size}")
@@ -194,9 +194,10 @@ class ProxyRepository(private val context: Context) {
         )
     }
 
-    private fun probeLocalEndpoint(host: String, port: Int): OpenEndpoint? {
+    private fun probeLocalEndpoint(host: String, port: Int, network: android.net.Network): OpenEndpoint? {
         val started = System.nanoTime()
-        val socket = java.net.Socket()
+        // Bind probes to Wi-Fi so a VPN's default route cannot swallow LAN traffic.
+        val socket = network.socketFactory.createSocket()
         val tcpMs = try {
             socket.tcpNoDelay = true
             socket.connect(java.net.InetSocketAddress(host, port), 450)
@@ -220,7 +221,7 @@ class ProxyRepository(private val context: Context) {
             runCatching { socket.close() }
         }
         val httpStatus = runCatching {
-            java.net.Socket().use { http ->
+            network.socketFactory.createSocket().use { http ->
                 http.connect(java.net.InetSocketAddress(host, port), 450)
                 http.soTimeout = 350
                 http.getOutputStream().write("CONNECT www.gstatic.com:443 HTTP/1.1\r\nHost: www.gstatic.com:443\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
