@@ -43,10 +43,10 @@ class SpeedMonitorService : Service() {
                 try {
                     val batch = repo.loadSnapshot().sortedBy { it.checkedAt ?: 0L }.take(48)
                     if (batch.isNotEmpty()) {
-                        val checked = repo.checkBatch(batch) { item ->
-                            val latest = repo.loadSnapshot()
-                            repo.saveSnapshot(latest.map { if (it.id == item.id) item else it })
-                        }
+                        val checked = repo.checkBatch(batch) { }
+                        val checkedById = checked.associateBy { it.id }
+                        val latest = repo.loadSnapshot()
+                        repo.saveSnapshot(latest.map { checkedById[it.id] ?: it })
                         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Обновлено: ${checked.size} прокси · следующий цикл через 5 минут"))
                     } else {
                         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Нет сохранённых прокси — сначала запусти поиск"))
