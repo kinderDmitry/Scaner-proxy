@@ -165,13 +165,15 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent.createChooser(send, "Передать ${items.size} конфигураций в HAPP"))
                         },
                         onCopyAllJson = { items ->
-                            val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
-                            val json = org.json.JSONArray().apply {
-                                unique.forEach { put(namedConfigForImport(it)) }
-                            }.toString(2)
+                            // HAPP accepts a subscription-style text list of URI configurations.
+                            // A JSON array of strings is not a valid Xray/HAPP JSON configuration.
+                            val unique = items.distinctBy { it.rawConfig.trim() }
+                                .filter { it.rawConfig.isNotBlank() }
+                            val payload = "#subscription-ping-onopen-enabled: 1\\n" +
+                                unique.joinToString("\\n") { namedConfigForImport(it) }
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configurations JSON", json))
-                            Toast.makeText(this, "JSON скопирован: ${unique.size} конфигураций", Toast.LENGTH_LONG).show()
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configurations", payload))
+                            Toast.makeText(this, "Список для HAPP скопирован: ${unique.size} конфигураций", Toast.LENGTH_LONG).show()
                         }
                     )
                 }
@@ -396,13 +398,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Icon(Icons.Default.ContentCopy, null, tint = Cyan, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(9.dp))
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                        Text("Копировать JSON всех конфигураций", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Копировать список конфигураций для HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Text("${exportItems.size} уникальных ссылок · только реальные результаты", color = TextMuted, fontSize = 10.sp)
                     }
                     Icon(Icons.Default.ContentCopy, null, tint = Cyan, modifier = Modifier.size(16.dp))
                 }
                 Text(
-                    "Экспорт создаёт JSON-массив HAPP-ссылок с именами. Для обычного прямого импорта нескольких узлов используй «Передать» и выбери HAPP.",
+                    "Копирует текстовый список ссылок VLESS/VMess/Trojan/SS для импорта в HAPP. Это список подписки, а не JSON-конфигурация Xray.",
                     color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
