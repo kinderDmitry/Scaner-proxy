@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
                         },
                         onBulkShare = { items ->
-                            val payload = items.distinctBy { it.rawConfig }.joinToString("\\n") { namedConfigForImport(it) }
+                            val payload = items.distinctBy { it.rawConfig }.joinToString("\n") { namedConfigForImport(it) }
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, payload)
@@ -227,7 +227,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     try {
                         val checked = repo.check(candidate)
                         val latest = allItems.map { if (it.id == checked.id) checked else it }
-                        persist(latest)
+                        allItems = latest
+                        repo.saveSnapshot(latest)
+                        repo.saveFavorites(latest.filter { it.favorite }.map { it.id }.toSet())
                     } catch (_: Exception) {
                         // A transient probe failure must not clear previously saved results.
                     } finally {
