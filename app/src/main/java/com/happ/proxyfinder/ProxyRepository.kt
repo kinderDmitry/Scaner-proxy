@@ -466,7 +466,6 @@ internal object ConfigParser {
     }
 
     private fun parseCountryFromTitle(title: String): Pair<String, String> {
-        val isoCodes = Locale.getISOCountries().toSet()
         val points = title.codePoints().toArray()
         for (i in 0 until (points.size - 1).coerceAtLeast(0)) {
             val first = points[i]
@@ -477,66 +476,74 @@ internal object ConfigParser {
             }
         }
 
-        Regex("\\[([A-Za-z]{2})\\]|\\(([A-Za-z]{2})\\)").find(title)?.let { match ->
+        bracketCountryRegex.find(title)?.let { match ->
             val code = (match.groupValues[1].ifBlank { match.groupValues[2] }).uppercase(Locale.ROOT)
             if (code in isoCodes) return countryName(code) to code
         }
 
-        val normalized = title.lowercase(Locale.ROOT)
-            .replace('_', ' ').replace('-', ' ')
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ").trim()
-        val aliases = mapOf(
-            "usa" to "US", "u s a" to "US", "united states" to "US",
-            "united states of america" to "US", "сша" to "US",
-            "deutschland" to "DE", "germany" to "DE", "германия" to "DE",
-            "россия" to "RU", "russia" to "RU", "russian federation" to "RU", "рф" to "RU",
-            "singapore" to "SG", "сингапур" to "SG",
-            "united kingdom" to "GB", "uk" to "GB", "great britain" to "GB", "britain" to "GB",
-            "england" to "GB", "великобритания" to "GB", "англия" to "GB",
-            "holland" to "NL", "netherlands" to "NL", "нидерланды" to "NL", "голландия" to "NL",
-            "france" to "FR", "франция" to "FR", "japan" to "JP", "япония" to "JP",
-            "canada" to "CA", "канада" to "CA", "finland" to "FI", "финляндия" to "FI",
-            "sweden" to "SE", "швеция" to "SE", "switzerland" to "CH", "швейцария" to "CH",
-            "hong kong" to "HK", "гонконг" to "HK", "taiwan" to "TW", "тайвань" to "TW",
-            "poland" to "PL", "польша" to "PL", "turkey" to "TR", "türkiye" to "TR", "турция" to "TR",
-            "india" to "IN", "индия" to "IN", "indonesia" to "ID", "индонезия" to "ID",
-            "brazil" to "BR", "бразилия" to "BR", "australia" to "AU", "австралия" to "AU",
-            "ukraine" to "UA", "украина" to "UA", "czechia" to "CZ", "czech republic" to "CZ", "чехия" to "CZ",
-            "latvia" to "LV", "латвия" to "LV", "estonia" to "EE", "эстония" to "EE",
-            "lithuania" to "LT", "литва" to "LT", "austria" to "AT", "австрия" to "AT",
-            "romania" to "RO", "румыния" to "RO", "south korea" to "KR", "южная корея" to "KR",
-            "israel" to "IL", "израиль" to "IL", "italy" to "IT", "италия" to "IT",
-            "spain" to "ES", "испания" to "ES", "norway" to "NO", "норвегия" to "NO",
-            "belgium" to "BE", "бельгия" to "BE", "ireland" to "IE", "ирландия" to "IE",
-            "new zealand" to "NZ", "новая зеландия" to "NZ"
-        )
-        val allNames = (Locale.getISOCountries().flatMap { code ->
+        val normalized = normalizeCountryText(title)
+        val paddedTitle = " $normalized "
+        for ((name, code) in countryNameEntries) {
+            if (paddedTitle.contains(" $name ")) return countryName(code) to code
+        }
+
+        // Feeds commonly use codes like US-NYC, DE | Frankfurt or lowercase us-nyc.
+        bareCountryCodeRegex.findAll(title).forEach { match ->
+            val code = match.groupValues[1].uppercase(Locale.ROOT)
+            if (code in isoCodes) return countryName(code) to code
+        }
+        return "" to ""
+    }
+
+    private fun normalizeCountryText(value: String): String = value.lowercase(Locale.ROOT)
+        .replace('_', ' ').replace('-', ' ')
+        .replace(countryPunctuationRegex, " ")
+        .replace(countryWhitespaceRegex, " ").trim()
+
+    private val isoCodes = Locale.getISOCountries().toSet()
+    private val bracketCountryRegex = Regex("\\[([A-Za-z]{2})\\]|\\(([A-Za-z]{2})\\)")
+    private val bareCountryCodeRegex = Regex("(?<![A-Za-z])([A-Z]{2})(?![A-Za-z])", RegexOption.IGNORE_CASE)
+    private val countryPunctuationRegex = Regex("[^\\p{L}\\p{N}\\s]")
+    private val countryWhitespaceRegex = Regex("\\s+")
+    private val countryAliases = mapOf(
+        "usa" to "US", "u s a" to "US", "united states" to "US",
+        "united states of america" to "US", "сша" to "US",
+        "deutschland" to "DE", "germany" to "DE", "германия" to "DE",
+        "россия" to "RU", "russia" to "RU", "russian federation" to "RU", "рф" to "RU",
+        "singapore" to "SG", "сингапур" to "SG",
+        "united kingdom" to "GB", "uk" to "GB", "great britain" to "GB", "britain" to "GB",
+        "england" to "GB", "великобритания" to "GB", "англия" to "GB",
+        "holland" to "NL", "netherlands" to "NL", "нидерланды" to "NL", "голландия" to "NL",
+        "france" to "FR", "франция" to "FR", "japan" to "JP", "япония" to "JP",
+        "canada" to "CA", "канада" to "CA", "finland" to "FI", "финляндия" to "FI",
+        "sweden" to "SE", "швеция" to "SE", "switzerland" to "CH", "швейцария" to "CH",
+        "hong kong" to "HK", "гонконг" to "HK", "taiwan" to "TW", "тайвань" to "TW",
+        "poland" to "PL", "польша" to "PL", "turkey" to "TR", "türkiye" to "TR", "турция" to "TR",
+        "india" to "IN", "индия" to "IN", "indonesia" to "ID", "индонезия" to "ID",
+        "brazil" to "BR", "бразилия" to "BR", "australia" to "AU", "австралия" to "AU",
+        "ukraine" to "UA", "украина" to "UA", "czechia" to "CZ", "czech republic" to "CZ", "чехия" to "CZ",
+        "latvia" to "LV", "латвия" to "LV", "estonia" to "EE", "эстония" to "EE",
+        "lithuania" to "LT", "литва" to "LT", "austria" to "AT", "австрия" to "AT",
+        "romania" to "RO", "румыния" to "RO", "south korea" to "KR", "южная корея" to "KR",
+        "israel" to "IL", "израиль" to "IL", "italy" to "IT", "италия" to "IT",
+        "spain" to "ES", "испания" to "ES", "norway" to "NO", "норвегия" to "NO",
+        "belgium" to "BE", "бельгия" to "BE", "ireland" to "IE", "ирландия" to "IE",
+        "new zealand" to "NZ", "новая зеландия" to "NZ"
+    )
+    private val countryNameEntries: List<Pair<String, String>> by lazy {
+        val localeNames = isoCodes.flatMap { code ->
             listOf(
                 Locale("", code).getDisplayCountry(Locale.ENGLISH) to code,
                 Locale("", code).getDisplayCountry(Locale("ru")) to code
             )
-        } + aliases.map { it.key to it.value })
-            .filter { it.first.isNotBlank() && it.first.length > 2 }
-            .distinctBy { it.first.lowercase(Locale.ROOT) }
+        }
+        (localeNames + countryAliases.map { it.key to it.value })
+            .mapNotNull { (name, code) ->
+                val normalized = normalizeCountryText(name)
+                if (normalized.length > 2) normalized to code else null
+            }
+            .distinctBy { it.first }
             .sortedByDescending { it.first.length }
-
-        for ((name, code) in allNames) {
-            val normalizedName = name.lowercase(Locale.ROOT)
-                .replace('_', ' ').replace('-', ' ')
-                .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-                .replace(Regex("\\s+"), " ").trim()
-            if (normalizedName.isNotBlank() &&
-                Regex("(^|\\s)${Regex.escape(normalizedName)}(\\s|$)").containsMatchIn(normalized)
-            ) return countryName(code) to code
-        }
-
-        // Many feeds use a bare uppercase ISO code such as US-NYC or DE | Frankfurt.
-        Regex("(?<![A-Za-z])([A-Z]{2})(?![A-Za-z])", RegexOption.IGNORE_CASE).findAll(title).forEach { match ->
-            val code = match.groupValues[1]
-            if (code in isoCodes) return countryName(code) to code
-        }
-        return "" to ""
     }
 
     private fun countryName(code: String): String {
