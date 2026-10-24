@@ -176,8 +176,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var showFilters by remember { mutableStateOf(false) }
     var showIpScanner by remember { mutableStateOf(false) }
     var showScanModeDialog by remember { mutableStateOf(false) }
-    var backgroundMonitor by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    var backgroundMonitor by remember {
+        mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
+    }
     var ipRange by remember { mutableStateOf("192.168.1.0/24") }
     var ipPorts by remember { mutableStateOf("443, 1080, 3128, 4145, 8080, 8081, 8388, 8443") }
     var authorizedScan by remember { mutableStateOf(false) }
@@ -306,6 +308,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             checked = backgroundMonitor,
                             onCheckedChange = { enabled ->
                                 backgroundMonitor = enabled
+                                context.getSharedPreferences("proxy_finder", 0).edit()
+                                    .putBoolean("background_monitor_enabled", enabled).apply()
                                 val serviceIntent = Intent(context, SpeedMonitorService::class.java).apply {
                                     action = if (enabled) SpeedMonitorService.ACTION_START else SpeedMonitorService.ACTION_STOP
                                 }
