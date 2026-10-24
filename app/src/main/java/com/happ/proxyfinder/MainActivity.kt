@@ -283,7 +283,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
                         Text("ПОИСК  /  ОТКРЫТЫЕ ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp)
                     }
-                    IconButton(onClick = { scan() }, enabled = !loading) {
+                    IconButton(onClick = { showScanModeDialog = true }, enabled = !loading) {
                         Icon(Icons.Default.Refresh, "Обновить источники", tint = if (loading) TextMuted else Blue, modifier = Modifier.size(24.dp))
                     }
                 }
@@ -476,7 +476,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "disclaimer") {
                 Text(
-                    "Проверка подтверждает только доступность TCP-порта. Полный туннель и скорость через протокол не тестируются. Бесплатные публичные узлы могут быть ненадёжными.",
+                    "Для HTTP и SOCKS5 измеряется задержка запроса к gstatic generate_204. Для VLESS, VMess и Shadowsocks без соответствующего прокси-ядра проверяется только TCP-порт. Бесплатные публичные узлы могут быть ненадёжными.",
                     color = TextMuted.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )
