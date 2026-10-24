@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -101,7 +102,7 @@ class MainActivity : ComponentActivity() {
                     ProxyFinderScreen(
                         repo = repository,
                         onShare = { item ->
-                            val config = item.rawConfig.trim()
+                            val config = namedConfigForImport(item)
                             val choices = arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
                             AlertDialog.Builder(this)
                                 .setTitle("Куда добавить конфигурацию?")
@@ -117,7 +118,7 @@ class MainActivity : ComponentActivity() {
                                     when (which) {
                                         0 -> {
                                             // HAPP supports its happ://add deep link for import links.
-                                            val deepLink = Uri.parse("happ://add/$config")
+                                            val deepLink = Uri.Builder().scheme("happ").authority("add").appendPath(config).build()
                                             val intent = Intent(Intent.ACTION_VIEW, deepLink)
                                             if (intent.resolveActivity(packageManager) != null) {
                                                 startActivity(intent)
@@ -128,8 +129,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         1 -> {
                                             // Hiddify's documented import format accepts a single proxy URI.
-                                            val safeName = Uri.encode(item.title.ifBlank { "HAPP Proxy Finder" })
-                                            val deepLink = Uri.parse(if (config.contains("#")) "hiddify://import/$config" else "hiddify://import/$config#$safeName")
+                                            val deepLink = Uri.Builder().scheme("hiddify").authority("import").appendPath(config).build()
                                             val intent = Intent(Intent.ACTION_VIEW, deepLink)
                                             if (intent.resolveActivity(packageManager) != null) {
                                                 startActivity(intent)
@@ -158,6 +158,20 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+private fun namedConfigForImport(item: ProxyItem): String {
+    val displayName = (if (item.country.isNotBlank() && item.countryCode.length == 2) {
+        countryFlag(item.countryCode) + " " + item.country
+    } else {
+        item.title.ifBlank { item.protocol }
+    }).take(30)
+    val description = android.util.Base64.encodeToString(
+        item.protocol.toByteArray(Charsets.UTF_8),
+        android.util.Base64.NO_WRAP
+    )
+    return item.rawConfig.trim().substringBefore('#') +
+        "#" + Uri.encode(displayName) + "?serverDescription=" + description
 }
 
 @Composable
@@ -278,7 +292,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(Blue, BlueDeep))),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Public, null, tint = Color(0xFF04101D), modifier = Modifier.size(27.dp))
+                        androidx.compose.foundation.Image(painter = painterResource(R.drawable.ic_happ_logo), contentDescription = "HAPP Proxy Finder", modifier = Modifier.size(40.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -513,7 +527,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
                     drawCircle(color = Cyan, radius = 3.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.36f))
                     drawCircle(color = Green, radius = 2.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.31f, size.height * 0.62f))
                 }
-                Icon(Icons.Default.Public, null, tint = Blue, modifier = Modifier.size(30.dp))
+                androidx.compose.foundation.Image(painter = painterResource(R.drawable.ic_happ_logo), contentDescription = "HAPP Proxy Finder", modifier = Modifier.size(62.dp))
             }
         }
     }
@@ -596,7 +610,11 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallMetric("PING", item.latencyMs?.let { if (item.isTunnelVerified) "$it мс" else if (item.checkStatus.startsWith("TCP доступен")) "TCP $it мс" else "—" } ?: "—", Icons.Default.Speed, Modifier.weight(1f))
+                SmallMetric(
+                    if (item.isTunnelVerified) "PING" else if (item.checkStatus.startsWith("TCP доступен")) "TCP RTT" else "PING",
+                    item.latencyMs?.let { if (item.isTunnelVerified) "$it мс" else if (item.checkStatus.startsWith("TCP доступен")) "$it мс" else "—" } ?: "—",
+                    Icons.Default.Speed, Modifier.weight(1f)
+                )
                 SmallMetric("ОЦЕНКА", if (item.qualityScore > 5) "${item.qualityScore}/100" else "—", Icons.Default.CheckCircle, Modifier.weight(1f))
                 SmallMetric("СТРАНА", if (item.countryCode.isNotBlank()) countryFlag(item.countryCode) + " " + item.countryCode.uppercase() else "🏳️", Icons.Default.LocationOn, Modifier.weight(1f))
             }
