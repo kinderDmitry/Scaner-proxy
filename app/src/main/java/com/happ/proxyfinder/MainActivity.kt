@@ -214,6 +214,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     }
     var scanFilter by remember { mutableStateOf("Все типы") }
     var scanScope by remember { mutableStateOf("Весь мир") }
+    var targetRange by remember { mutableStateOf("192.168.1.0/24") }
+    var targetPorts by remember { mutableStateOf("1080, 3128, 8080, 8081, 8888, 9050") }
     var localResults by remember { mutableStateOf(emptyList<OpenEndpoint>()) }
     var errorMessage by remember { mutableStateOf("") }
     var autoRefresh by remember { mutableStateOf(true) }
@@ -259,7 +261,30 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         if (loading) return
         loading = true
         errorMessage = ""
-        if (scanScope == "Локальная сеть") {
+        if (scanScope == "Диапазон IP") {
+            sourceStatus = "Сканируем разрешённый диапазон IP"
+            sourceProgress = "Подготовка адресов и портов"
+            localResults = emptyList()
+            scope.launch {
+                try {
+                    val result = repo.scanAuthorizedRange(targetRange, targetPorts) { progress ->
+                        withContext(Dispatchers.Main) { sourceProgress = progress }
+                    }
+                    localResults = result.endpoints
+                    sourceStatus = "Диапазон IP · найдено ${result.endpoints.size}"
+                    sourceProgress = result.message
+                    if (result.endpoints.isEmpty()) errorMessage = result.message
+                } catch (_: Exception) {
+                    sourceStatus = "Сканирование диапазона прервано"
+                    errorMessage = "Не удалось проверить диапазон. Проверь адрес, порты и разрешение на сканирование."
+                } finally {
+                    loading = false
+                    checkingCount = 0
+                }
+            }
+            return
+        }
+        if (scanScope == "Диапазон IP") {
             sourceStatus = "Сканируем локальную Wi-Fi сеть"
             sourceProgress = "Определяем локальную подсеть"
             localResults = emptyList()
@@ -441,14 +466,43 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text("ГДЕ ИСКАТЬ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    FlowChips(items = listOf("Весь мир"), selected = scanScope, onSelect = {
+                    FlowChips(items = listOf("Весь мир", "Диапазон IP"), selected = scanScope, onSelect = {
                         scanScope = it
                         errorMessage = ""
                     })
                     Text(
-                        "Глобальный поиск по публичным источникам конфигураций со всего мира. Это не сканирование всех IP-адресов интернета: приложение загружает опубликованные узлы и проверяет их доступность.",
+                        if (scanScope == "Весь мир") "Поиск опубликованных конфигураций из источников разных стран." else "Сканер IP/портов для сети или диапазона, который ты владеешь или имеешь разрешение проверять. Ограничение: максимум /24 и 8 портов за запуск.",
                         color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp
                     )
+                    if (scanScope == "Диапазон IP") {
+                        OutlinedTextField(
+                            value = targetRange,
+                            onValueChange = { targetRange = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("IPv4 / CIDR (например 192.168.1.0/24)") },
+                            singleLine = true,
+                            enabled = !loading,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Blue, focusedLabelColor = Blue,
+                                unfocusedBorderColor = Line, focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                        OutlinedTextField(
+                            value = targetPorts,
+                            onValueChange = { targetPorts = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("TCP-порты через запятую (до 8)") },
+                            singleLine = true,
+                            enabled = !loading,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Blue, focusedLabelColor = Blue,
+                                unfocusedBorderColor = Line, focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                        Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                    }
                     Text("ТИП ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                     val scanFilters = listOf("Все типы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
                     scanFilters.chunked(3).forEach { rowFilters ->
@@ -486,9 +540,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "localResults") {
                 if (scanScope == "Локальная сеть") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Text("РЕЗУЛЬТАТЫ ЛОКАЛЬНОЙ СЕТИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                        Text("РЕЗУЛЬТАТЫ СКАНИРОВАНИЯ IP", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
                         if (!loading && localResults.isEmpty() && errorMessage.isBlank()) {
-                            Text("На проверенных портах ничего не найдено. Убедись, что прокси-сервер включён и использует один из стандартных портов; ниже показана подсеть, которую проверило приложение.", color = TextMuted, fontSize = 11.sp, lineHeight = 16.sp)
+                            Text("На выбранных адресах и портах ничего не обнаружено. Проверь диапазон и порты; сканируй только сети, на проверку которых у тебя есть разрешение.", color = TextMuted, fontSize = 11.sp, lineHeight = 16.sp)
                         }
                         localResults.forEach { endpoint -> LocalEndpointCard(endpoint) }
                     }
