@@ -519,7 +519,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                                 persist(allItems.map { if (it.id == item.id) checked else it })
                             }
                         },
-                        onShare = { onShare(item) }, onCopy = { onCopy(item.rawConfig) }
+                        onShare = { onShare(item) }, onCopy = { onCopy(namedConfigForImport(item)) }
                     )
                 }
             }
