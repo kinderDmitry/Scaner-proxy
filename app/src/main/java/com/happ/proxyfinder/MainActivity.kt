@@ -174,6 +174,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
     var showIpScanner by remember { mutableStateOf(false) }
+    var showScanModeDialog by remember { mutableStateOf(false) }
     var ipRange by remember { mutableStateOf("192.168.1.0/24") }
     var ipPorts by remember { mutableStateOf("443, 1080, 3128, 4145, 8080, 8081, 8388, 8443") }
     var authorizedScan by remember { mutableStateOf(false) }
@@ -285,7 +286,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 }
             }
             item(key = "hero") {
-                HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
+                HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { showScanModeDialog = true }, enabled = !loading)
             }
             item(key = "ipScanner") {
                 OutlinedButton(
@@ -452,6 +453,42 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 )
             }
         }
+    }
+
+
+    if (showScanModeDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!loading) showScanModeDialog = false },
+            containerColor = Surface,
+            title = { Text("Что сканируем?", color = TextPrimary, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Выбери режим перед запуском.", color = TextMuted, fontSize = 12.sp)
+                    OutlinedButton(
+                        onClick = { showScanModeDialog = false; showIpScanner = true },
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Blue.copy(alpha = 0.6f))
+                    ) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                            Text("Сканер IP и портов", color = TextPrimary, fontWeight = FontWeight.Bold)
+                            Text("Проверка заданного IPv4/CIDR и TCP-портов", color = TextMuted, fontSize = 10.sp)
+                        }
+                    }
+                    Button(
+                        onClick = { showScanModeDialog = false; scan() },
+                        enabled = !loading, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))
+                    ) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                            Text("Общедоступные прокси", fontWeight = FontWeight.Bold)
+                            Text("Загрузка открытых конфигураций и проверка доступности", fontSize = 10.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showScanModeDialog = false }) { Text("Отмена", color = TextMuted) } }
+        )
     }
 
     if (showIpScanner) {
@@ -624,7 +661,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Tag(item.protocol.uppercase(), Color(0xFF133853), Blue)
-                if (item.country.isNotBlank()) Tag(item.country, Color(0xFF1A2D2A), Green)
+                Tag("${countryFlag(item.countryCode)} ${item.country.ifBlank { "Страна не определена" }}", Color(0xFF1A2D2A), Green)
                 Spacer(Modifier.weight(1f))
                 val statusColor = if (item.isTcpReachable) Green else if (item.checkStatus == "TCP недоступен") Red else Amber
                 Box(Modifier.size(6.dp).clip(CircleShape).background(statusColor))
@@ -634,7 +671,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallMetric("PING", item.latencyMs?.let { "$it ms" } ?: "—", Icons.Default.Speed, Modifier.weight(1f))
                 SmallMetric("ОЦЕНКА", if (item.qualityScore > 5) "${item.qualityScore}/100" else "—", Icons.Default.CheckCircle, Modifier.weight(1f))
-                SmallMetric("СТРАНА", if (item.country.isNotBlank()) item.countryCode.ifBlank { "Определена" } else "—", Icons.Default.LocationOn, Modifier.weight(1f))
+                SmallMetric("СТРАНА", if (item.countryCode.isNotBlank()) countryFlag(item.countryCode) + " " + item.countryCode.uppercase() else "🏳️", Icons.Default.LocationOn, Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -710,4 +747,12 @@ private fun EmptyState(loading: Boolean, onScan: () -> Unit) {
 private fun averageLatency(items: List<ProxyItem>): String {
     val values = items.filter { it.isTcpReachable }.mapNotNull { it.latencyMs }
     return if (values.isEmpty()) "—" else "${values.average().toInt()} ms"
+}
+
+private fun countryFlag(countryCode: String): String {
+    val code = countryCode.trim().uppercase(java.util.Locale.ROOT)
+    if (code.length != 2 || code.any { it !in 'A'..'Z' }) return "🏳️"
+    val first = code[0].code - 'A'.code + 0x1F1E6
+    val second = code[1].code - 'A'.code + 0x1F1E6
+    return String(Character.toChars(first)) + String(Character.toChars(second))
 }
