@@ -227,13 +227,14 @@ class ProxyRepository(private val context: Context) {
                 http.getOutputStream().flush()
                 val reader = http.getInputStream().bufferedReader(Charsets.US_ASCII)
                 val statusLine = reader.readLine().orEmpty()
-                Regex("^HTTP/1\\.[01] (200|407)(?:\\s.*)?$").find(statusLine)?.groupValues?.get(1)
+                Regex("^HTTP/1\\.[01] ([1-5][0-9]{2})(?:\\s.*)?$").find(statusLine)?.groupValues?.get(1)
             }
         }.getOrNull()
         return when (httpStatus) {
             "200" -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP CONNECT работает")
             "407" -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP-прокси обнаружен · требуется авторизация")
-            else -> OpenEndpoint(host, port, tcpMs, "TCP", "Открытый TCP-порт · прокси не подтверждён")
+            null -> OpenEndpoint(host, port, tcpMs, "TCP", "Открытый TCP-порт · прокси не подтверждён")
+            else -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP-прокси отвечает HTTP $httpStatus · туннель не подтверждён")
         }
     }
 
