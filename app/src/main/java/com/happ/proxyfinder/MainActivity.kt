@@ -163,6 +163,15 @@ class MainActivity : ComponentActivity() {
                                 putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${items.size} конфигураций")
                             }
                             startActivity(Intent.createChooser(send, "Передать ${items.size} конфигураций в HAPP"))
+                        },
+                        onCopyAllJson = { items ->
+                            val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                            val json = org.json.JSONArray().apply {
+                                unique.forEach { put(namedConfigForImport(it)) }
+                            }.toString(2)
+                            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configurations JSON", json))
+                            Toast.makeText(this, "JSON скопирован: ${unique.size} конфигураций", Toast.LENGTH_LONG).show()
                         }
                     )
                 }
@@ -186,7 +195,7 @@ private fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(repo.loadSnapshot()) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
@@ -373,6 +382,30 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "hero") {
                 HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
+            }
+            item(key = "exportJson") {
+                val exportItems = allItems.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                OutlinedButton(
+                    onClick = { onCopyAllJson(exportItems) },
+                    enabled = exportItems.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Cyan.copy(alpha = 0.5f)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, null, tint = Cyan, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(9.dp))
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                        Text("Копировать JSON всех конфигураций", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("${exportItems.size} уникальных ссылок · только реальные результаты", color = TextMuted, fontSize = 10.sp)
+                    }
+                    Icon(Icons.Default.ContentCopy, null, tint = Cyan, modifier = Modifier.size(16.dp))
+                }
+                Text(
+                    "Экспорт создаёт JSON-массив HAPP-ссылок с именами. Для обычного прямого импорта нескольких узлов используй «Передать» и выбери HAPP.",
+                    color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
             }
             item(key = "backgroundMonitor") {
                 Column(
