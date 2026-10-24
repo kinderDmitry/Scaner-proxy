@@ -284,31 +284,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             return
         }
-        if (scanScope == "Диапазон IP") {
-            sourceStatus = "Сканируем локальную Wi-Fi сеть"
-            sourceProgress = "Определяем локальную подсеть"
-            localResults = emptyList()
-            scope.launch {
-                try {
-                    val result = repo.scanLocalNetwork { progress ->
-                        withContext(Dispatchers.Main) { sourceProgress = progress }
-                    }
-                    localResults = result.endpoints
-                    sourceStatus = "Локальная сеть · найдено " + result.endpoints.size
-                    sourceProgress = result.message
-                    if (result.endpoints.isEmpty() && !result.message.startsWith("Локальная сеть")) {
-                        errorMessage = result.message
-                    }
-                } catch (_: Exception) {
-                    sourceStatus = "Локальное сканирование прервано"
-                    errorMessage = "Не удалось просканировать локальную сеть. Проверь подключение к Wi-Fi."
-                } finally {
-                    loading = false
-                    checkingCount = 0
-                }
-            }
-            return
-        }
         sourceStatus = "Подключаемся к открытым источникам"
         sourceProgress = "Подготовка"
         scope.launch {
