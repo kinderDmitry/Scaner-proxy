@@ -226,7 +226,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 scope.launch {
                     try {
                         val checked = repo.check(candidate)
-                        val latest = allItems.map { if (it.id == checked.id) checked else it }
+                        val latest = allItems.map { if (it.id == checked.id) checked.copy(favorite = it.favorite) else it }
                         allItems = latest
                         repo.saveSnapshot(latest)
                         repo.saveFavorites(latest.filter { it.favorite }.map { it.id }.toSet())
@@ -494,7 +494,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(9.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(sourceStatus, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (sourceProgress.isNotBlank()) sourceProgress else "Проверка UI: каждую секунду · цикл ${refreshCounter + 1}/60", color = TextMuted, fontSize = 10.sp)
+                        Text(if (sourceProgress.isNotBlank()) sourceProgress else "Автопроверка: 1 сек · цикл ${refreshCounter + 1}/60", color = TextMuted, fontSize = 10.sp)
                     }
                     if (loading || geoLoading) {
                         CircularProgressIndicator(Modifier.size(19.dp), color = Blue, strokeWidth = 2.dp)
