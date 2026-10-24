@@ -310,9 +310,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
                         Text("ПОИСК  /  ОТКРЫТЫЕ ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp)
                     }
-                    IconButton(onClick = { startSelectedScan() }, enabled = !loading && !ipScanning) {
-                        Icon(Icons.Default.Refresh, "Обновить источники", tint = if (loading) TextMuted else Blue, modifier = Modifier.size(24.dp))
-                    }
+                    Icon(Icons.Default.Refresh, contentDescription = "Сканирование запускается кнопкой ниже", tint = TextMuted.copy(alpha = 0.65f), modifier = Modifier.size(22.dp))
                 }
             }
             item(key = "hero") {
@@ -574,15 +572,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
             }
             Text("Найди свой\nбыстрый узел.", color = TextPrimary, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 27.sp)
             Text("Публичные конфигурации для HAPP", color = Color(0xFFB5C8DD), fontSize = 11.sp)
-            Button(
-                onClick = onScan, enabled = enabled,
-                shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 15.dp, vertical = 10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Blue, disabledContainerColor = Color(0xFF35516A))
-            ) {
-                Icon(if (loading) Icons.Default.NetworkCheck else Icons.Default.FilterList, null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(7.dp))
-                Text(if (loading) if (checkingCount > 0) "Проверка · $checkingCount" else "Сканирую…" else "Начать сканирование", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
+            Text("Выбери режим ниже и нажми «Сканировать».", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 15.sp)
         }
         Box(Modifier.size(124.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.size(112.dp).scale(pulse).clip(CircleShape).background(Blue.copy(alpha = 0.045f)))
