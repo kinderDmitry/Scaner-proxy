@@ -169,8 +169,8 @@ class MainActivity : ComponentActivity() {
                             // A JSON array of strings is not a valid Xray/HAPP JSON configuration.
                             val unique = items.distinctBy { it.rawConfig.trim() }
                                 .filter { it.rawConfig.isNotBlank() }
-                            val payload = "#subscription-ping-onopen-enabled: 1\\n" +
-                                unique.joinToString("\\n") { namedConfigForImport(it) }
+                            val payload = "#subscription-ping-onopen-enabled: 1\n" +
+                                unique.joinToString("\n") { namedConfigForImport(it) }
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configurations", payload))
                             Toast.makeText(this, "Список для HAPP скопирован: ${unique.size} конфигураций", Toast.LENGTH_LONG).show()
