@@ -19,7 +19,7 @@ import java.util.Base64
 import java.util.Locale
 
 /** Fetches public configuration feeds. Feed contents are untrusted input and are never executed. */
-class ProxyRepository(context: Context) {
+class ProxyRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("proxy_finder", Context.MODE_PRIVATE)
 
     private val sources = listOf(
