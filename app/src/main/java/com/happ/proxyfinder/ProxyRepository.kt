@@ -348,7 +348,9 @@ class ProxyRepository(private val context: Context) {
             val country = allGeo[item.host]
             if (country == null || item.country.isNotBlank()) item else item.copy(country = country.first, countryCode = country.second)
         }
-        resolved.filter { it.country.isNotBlank() }.forEach { onResolved(it) }
+        items.zip(resolved).forEach { (original, resolvedItem) ->
+            if (original.country.isBlank() && resolvedItem.country.isNotBlank()) onResolved(resolvedItem)
+        }
         resolved
     }
 
