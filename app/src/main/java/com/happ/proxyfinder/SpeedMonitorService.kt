@@ -32,11 +32,13 @@ class SpeedMonitorService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            getSharedPreferences("proxy_finder", MODE_PRIVATE).edit().putBoolean("background_monitor_enabled", false).apply()
             job?.cancel()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
+        getSharedPreferences("proxy_finder", MODE_PRIVATE).edit().putBoolean("background_monitor_enabled", true).apply()
         startForeground(NOTIFICATION_ID, notification("Фоновая проверка включена"))
         if (job?.isActive != true) job = scope.launch {
             while (true) {
