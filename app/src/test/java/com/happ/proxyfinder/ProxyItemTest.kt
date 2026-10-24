@@ -19,6 +19,28 @@ class ProxyItemTest {
     )
 
     @Test
+    fun parserExtractsCountryFlagAndLabelsInternetSource() {
+        val parsed = ConfigParser.parseConfig(
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#%F0%9F%87%BA%F0%9F%87%B8%20United%20States"
+        )
+
+        assertTrue(parsed != null)
+        assertEquals("US", parsed?.countryCode)
+        assertTrue(parsed?.country?.isNotBlank() == true)
+        assertTrue(parsed?.source?.startsWith("Сеть · ") == true)
+    }
+
+    @Test
+    fun parserExtractsCountryCodeFromBracketedServerName() {
+        val parsed = ConfigParser.parseConfig(
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#Node%20%5BDE%5D"
+        )
+
+        assertEquals("DE", parsed?.countryCode)
+        assertTrue(parsed?.country?.isNotBlank() == true)
+    }
+
+    @Test
     fun successfulGenerate204IsVerifiedAndScored() {
         val proxy = item("Проверен через generate_204 · HTTP 204", 85)
 
