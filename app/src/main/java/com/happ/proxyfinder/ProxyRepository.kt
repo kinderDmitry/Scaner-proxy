@@ -131,6 +131,101 @@ class ProxyRepository(context: Context) {
     }
 
 
+    /**
+     * Scans only the currently connected Wi-Fi subnet. It never scans public IP ranges.
+     * Open TCP ports are reported separately from protocol-confirmed SOCKS/HTTP proxies.
+     */
+    suspend fun scanLocalNetwork(onProgress: suspend (String) -> Unit): EndpointScanResult = withContext(Dispatchers.IO) {
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val network = connectivity.activeNetwork
+            ?: return@withContext EndpointScanResult(emptyList(), "Нет активного сетевого подключения")
+        val capabilities = connectivity.getNetworkCapabilities(network)
+        if (capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) != true) {
+            return@withContext EndpointScanResult(emptyList(), "Для локального поиска подключись к Wi-Fi")
+        }
+        val linkProperties = connectivity.getLinkProperties(network)
+            ?: return@withContext EndpointScanResult(emptyList(), "Не удалось определить локальную сеть")
+        val link = linkProperties.linkAddresses.firstOrNull {
+            it.address is java.net.Inet4Address && !it.address.isLoopbackAddress && !it.address.isLinkLocalAddress
+        } ?: return@withContext EndpointScanResult(emptyList(), "Не удалось определить локальный IPv4-адрес")
+        val prefix = link.prefixLength
+        if (prefix !in 24..30) {
+            return@withContext EndpointScanResult(emptyList(), "Для безопасного локального сканирования поддерживаются Wi-Fi подсети /24–/30; обнаружена /$prefix")
+        }
+        val ownIp = link.address.hostAddress ?: return@withContext EndpointScanResult(emptyList(), "Не удалось прочитать IP устройства")
+        val octets = ownIp.split('.').mapNotNull { it.toLongOrNull() }
+        if (octets.size != 4) return@withContext EndpointScanResult(emptyList(), "Локальный IPv4-адрес некорректен")
+        val ownLong = octets.fold(0L) { acc, value -> (acc shl 8) or value }
+        val hostBits = 32 - prefix
+        val mask = (0xFFFF_FFFFL shl hostBits) and 0xFFFF_FFFFL
+        val networkStart = ownLong and mask
+        val broadcast = networkStart or (mask xor 0xFFFF_FFFFL)
+        val addresses = (networkStart + 1 until broadcast)
+            .filter { it != ownLong }
+            .map { value -> listOf(24, 16, 8, 0).joinToString(".") { shift -> ((value shr shift) and 255).toString() } }
+        val ports = listOf(1080, 10808, 10809, 3128, 8080, 8081, 7890, 7891, 8888)
+        val tasks = addresses.flatMap { ip -> ports.map { port -> ip to port } }
+        val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val gate = Semaphore(48)
+        coroutineScope {
+            tasks.map { (ip, port) -> async {
+                gate.withPermit {
+                    probeLocalEndpoint(ip, port)?.let(found::add)
+                    val count = completed.incrementAndGet()
+                    if (count % 100 == 0 || count == tasks.size) {
+                        onProgress("Локальная сеть: проверено $count/${tasks.size} адресов и портов · найдено ${found.size}")
+                    }
+                }
+            } }.awaitAll()
+        }
+        val sorted = found.sortedWith(compareBy<OpenEndpoint> { it.protocol == "TCP" }.thenBy { it.latencyMs }.thenBy { it.host }.thenBy { it.port })
+        EndpointScanResult(sorted, "Локальная сеть · найдено ${sorted.size} открытых портов; протокол подтверждён только для SOCKS5/HTTP CONNECT")
+    }
+
+    private fun probeLocalEndpoint(host: String, port: Int): OpenEndpoint? {
+        val started = System.nanoTime()
+        val socket = java.net.Socket()
+        val tcpMs = try {
+            socket.tcpNoDelay = true
+            socket.connect(java.net.InetSocketAddress(host, port), 350)
+            ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+        } catch (_: Exception) {
+            runCatching { socket.close() }
+            return null
+        }
+        try {
+            socket.soTimeout = 250
+            socket.getOutputStream().write(byteArrayOf(0x05, 0x01, 0x00))
+            socket.getOutputStream().flush()
+            val input = socket.getInputStream()
+            val version = input.read()
+            val method = input.read()
+            if (version == 5 && method in 0..254) {
+                return OpenEndpoint(host, port, tcpMs, "SOCKS5", if (method == 0) "SOCKS5 обнаружен · без авторизации" else "SOCKS5 обнаружен · может требоваться авторизация")
+            }
+        } catch (_: Exception) {
+        } finally {
+            runCatching { socket.close() }
+        }
+        val httpStatus = runCatching {
+            java.net.Socket().use { http ->
+                http.connect(java.net.InetSocketAddress(host, port), 350)
+                http.soTimeout = 300
+                http.getOutputStream().write("CONNECT www.gstatic.com:443 HTTP/1.1\r\nHost: www.gstatic.com:443\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                http.getOutputStream().flush()
+                val reader = http.getInputStream().bufferedReader(Charsets.US_ASCII)
+                val statusLine = reader.readLine().orEmpty()
+                Regex("^HTTP/1\\.[01] (200|407)(?:\\s.*)?$").find(statusLine)?.groupValues?.get(1)
+            }
+        }.getOrNull()
+        return when (httpStatus) {
+            "200" -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP CONNECT работает")
+            "407" -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP-прокси обнаружен · требуется авторизация")
+            else -> OpenEndpoint(host, port, tcpMs, "TCP", "Открытый TCP-порт · прокси не подтверждён")
+        }
+    }
+
     suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
         val checkedAt = System.currentTimeMillis()
         if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
@@ -397,7 +492,7 @@ internal object Ipv4RangeParser {
 }
 
 data class FetchResult(val items: List<ProxyItem>, val sourceCounts: Map<String, Int>)
-data class OpenEndpoint(val host: String, val port: Int, val latencyMs: Int) {
+data class OpenEndpoint(val host: String, val port: Int, val latencyMs: Int, val protocol: String = "TCP", val status: String = "Открытый TCP-порт · прокси не подтверждён") {
     /** Port-number hint only; it is not protocol detection. */
     val portHint: String get() = when (port) {
         1080 -> "Часто используется для SOCKS-прокси · не подтверждено"
