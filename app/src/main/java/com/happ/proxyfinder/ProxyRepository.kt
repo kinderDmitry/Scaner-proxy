@@ -486,11 +486,11 @@ internal object ConfigParser {
             .replace(Regex("\\s+"), " ").trim()
         val aliases = mapOf(
             "usa" to "US", "u s a" to "US", "united states" to "US",
-            "united states of america" to "US", "america" to "US", "сша" to "US",
+            "united states of america" to "US", "сша" to "US",
             "deutschland" to "DE", "germany" to "DE", "германия" to "DE",
             "россия" to "RU", "russia" to "RU", "russian federation" to "RU", "рф" to "RU",
             "singapore" to "SG", "сингапур" to "SG",
-            "united kingdom" to "GB", "great britain" to "GB", "britain" to "GB",
+            "united kingdom" to "GB", "uk" to "GB", "great britain" to "GB", "britain" to "GB",
             "england" to "GB", "великобритания" to "GB", "англия" to "GB",
             "holland" to "NL", "netherlands" to "NL", "нидерланды" to "NL", "голландия" to "NL",
             "france" to "FR", "франция" to "FR", "japan" to "JP", "япония" to "JP",
@@ -530,7 +530,7 @@ internal object ConfigParser {
         }
 
         // Many feeds use a bare uppercase ISO code such as US-NYC or DE | Frankfurt.
-        Regex("(?<![A-Za-z])([A-Z]{2})(?![A-Za-z])").findAll(title).forEach { match ->
+        Regex("(?<![A-Za-z])([A-Z]{2})(?![A-Za-z])", RegexOption.IGNORE_CASE).findAll(title).forEach { match ->
             val code = match.groupValues[1]
             if (code in isoCodes) return countryName(code) to code
         }
