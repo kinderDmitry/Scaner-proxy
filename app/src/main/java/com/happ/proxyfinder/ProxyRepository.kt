@@ -12,6 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.Proxy
 import java.net.URL
 import java.net.URI
 import java.util.Base64
@@ -133,14 +134,42 @@ class ProxyRepository(context: Context) {
 
 
     suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
-        if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = System.currentTimeMillis())
-        val started = System.nanoTime()
+        val checkedAt = System.currentTimeMillis()
+        if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
+        val proxyType = when (item.protocol.uppercase(Locale.ROOT)) {
+            "SOCKS5" -> Proxy.Type.SOCKS
+            "HTTP", "HTTPS" -> Proxy.Type.HTTP
+            else -> null
+        }
+        if (proxyType == null) {
+            val started = System.nanoTime()
+            return@withContext try {
+                Socket().use { socket -> socket.tcpNoDelay = true; socket.connect(InetSocketAddress(item.host, item.port), 2600) }
+                val tcpMs = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+                item.copy(checkStatus = "TCP доступен · скорость туннеля не измерена: нужен core ${item.protocol}", latencyMs = tcpMs, checkedAt = checkedAt)
+            } catch (_: Exception) {
+                item.copy(checkStatus = "TCP недоступен", latencyMs = null, checkedAt = checkedAt)
+            }
+        }
         try {
-            Socket().use { socket -> socket.tcpNoDelay = true; socket.connect(InetSocketAddress(item.host, item.port), 2600) }
-            val latency = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
-            item.copy(checkStatus = "TCP доступен · туннель не проверен", latencyMs = latency, checkedAt = System.currentTimeMillis())
+            val proxy = Proxy(proxyType, InetSocketAddress(item.host, item.port))
+            val connection = URL(SPEED_TEST_URL).openConnection(proxy).apply {
+                connectTimeout = 4500
+                readTimeout = 4500
+                useCaches = false
+                setRequestProperty("Cache-Control", "no-cache, no-store")
+                setRequestProperty("Pragma", "no-cache")
+                setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
+            } as java.net.HttpURLConnection
+            val started = System.nanoTime()
+            connection.instanceFollowRedirects = false
+            val status = connection.responseCode
+            val elapsed = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+            connection.disconnect()
+            if (status == 204) item.copy(checkStatus = "Проверен через generate_204 · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
+            else item.copy(checkStatus = "Прокси ответил HTTP $status на generate_204", latencyMs = elapsed, checkedAt = checkedAt)
         } catch (_: Exception) {
-            item.copy(checkStatus = "TCP недоступен", latencyMs = null, checkedAt = System.currentTimeMillis())
+            item.copy(checkStatus = "Проверка generate_204 не пройдена", latencyMs = null, checkedAt = checkedAt)
         }
     }
 
@@ -238,6 +267,7 @@ class ProxyRepository(context: Context) {
     private data class Source(val name: String, val url: String)
 
     companion object {
+        private const val SPEED_TEST_URL = "https://www.gstatic.com/generate_204"
         private const val MAX_SOURCE_BYTES = 1_800_000
         private const val MAX_LINES = 20_000
         private const val MAX_SNAPSHOT = 2_500
