@@ -219,7 +219,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             delay(1000)
             refreshCounter = (refreshCounter + 1) % 60
             if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
-                val candidates = allItems
+                val candidates = allItems.filter { it.isChecked }.ifEmpty { allItems.take(48) }
                 val candidate = candidates[cursor % candidates.size]
                 cursor = (cursor + 1) % candidates.size
                 autoCheckRunning = true
