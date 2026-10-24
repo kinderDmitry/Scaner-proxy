@@ -7,6 +7,7 @@ import android.app.AlertDialog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -175,6 +176,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var showFilters by remember { mutableStateOf(false) }
     var showIpScanner by remember { mutableStateOf(false) }
     var showScanModeDialog by remember { mutableStateOf(false) }
+    var backgroundMonitor by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     var ipRange by remember { mutableStateOf("192.168.1.0/24") }
     var ipPorts by remember { mutableStateOf("443, 1080, 3128, 4145, 8080, 8081, 8388, 8443") }
     var authorizedScan by remember { mutableStateOf(false) }
@@ -287,6 +290,32 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "hero") {
                 HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { showScanModeDialog = true }, enabled = !loading)
+            }
+            item(key = "backgroundMonitor") {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("Фоновая проверка", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Обновление задержки через generate_204 каждые 5 минут при выключенном экране", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+                        }
+                        Switch(
+                            checked = backgroundMonitor,
+                            onCheckedChange = { enabled ->
+                                backgroundMonitor = enabled
+                                val serviceIntent = Intent(context, SpeedMonitorService::class.java).apply {
+                                    action = if (enabled) SpeedMonitorService.ACTION_START else SpeedMonitorService.ACTION_STOP
+                                }
+                                if (enabled) androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+                                else context.startService(serviceIntent)
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f))
+                        )
+                    }
+                    Text("Работает при заблокированном экране, но не при полностью выключенном телефоне. Android может ограничивать фоновые задачи.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                }
             }
             item(key = "ipScanner") {
                 OutlinedButton(
