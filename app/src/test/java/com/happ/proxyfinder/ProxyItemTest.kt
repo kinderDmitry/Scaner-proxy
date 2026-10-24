@@ -40,6 +40,30 @@ class ProxyItemTest {
         assertTrue(parsed?.country?.isNotBlank() == true)
     }
 
+
+    @Test
+    fun parserRecognizesCountryNamesInServerTitles() {
+        val cases = listOf(
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#Germany-Frankfurt" to "DE",
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#USA-NewYork" to "US",
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#Singapore-01" to "SG",
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#Россия-Москва" to "RU"
+        )
+        cases.forEach { (config, expectedCode) ->
+            val parsed = ConfigParser.parseConfig(config)
+            assertEquals("Country should be detected for $config", expectedCode, parsed?.countryCode)
+            assertTrue("Country name should not be blank for $config", parsed?.country?.isNotBlank() == true)
+        }
+    }
+
+    @Test
+    fun parserRecognizesBareUppercaseIsoCountryCode() {
+        val parsed = ConfigParser.parseConfig(
+            "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#DE-Frankfurt-01"
+        )
+        assertEquals("DE", parsed?.countryCode)
+    }
+
     @Test
     fun successfulGenerate204IsVerifiedAndScored() {
         val proxy = item("Проверен через generate_204 · HTTP 204", 85)
