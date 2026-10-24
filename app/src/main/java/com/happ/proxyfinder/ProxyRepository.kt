@@ -196,10 +196,12 @@ class ProxyRepository(private val context: Context) {
             } }.awaitAll()
         }
         val sorted = found.sortedWith(compareBy<OpenEndpoint> { it.protocol == "TCP" }.thenBy { it.latencyMs }.thenBy { it.host }.thenBy { it.port })
-        EndpointScanResult(
-            sorted,
+        val summary = if (sorted.isEmpty()) {
+            "Wi-Fi $subnetAddress/$prefix · проверено ${tasks.size} комбинаций. На устройствах локальной сети открытые прокси-порты не обнаружены. Это не поиск прокси в интернете: если нужен список внешних узлов, переключи режим на открытые источники."
+        } else {
             "Wi-Fi $subnetAddress/$prefix · проверено ${tasks.size} комбинаций · найдено ${sorted.size} открытых портов. Только SOCKS5/HTTP CONNECT подтверждают тип прокси; TCP сам по себе не подтверждает прокси."
-        )
+        }
+        EndpointScanResult(sorted, summary)
     }
 
     private fun probeLocalEndpoint(host: String, port: Int, network: android.net.Network): OpenEndpoint? {
