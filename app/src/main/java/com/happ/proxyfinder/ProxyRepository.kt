@@ -15,7 +15,7 @@ import java.net.Socket
 import java.net.Proxy
 import java.net.URL
 import java.net.URI
-import java.util.Base64
+import android.util.Base64
 import java.util.Locale
 
 /** Fetches public configuration feeds. Feed contents are untrusted input and are never executed. */
@@ -82,7 +82,7 @@ class ProxyRepository(private val context: Context) {
         if (compact.length < 16 || !compact.matches(Regex("[A-Za-z0-9+/=_-]+"))) return text
         return runCatching {
             val padded = compact.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }
-            String(Base64.getDecoder().decode(padded), Charsets.UTF_8).takeIf { it.contains("://") } ?: text
+            String(Base64.decode(padded, Base64.DEFAULT), Charsets.UTF_8).takeIf { it.contains("://") } ?: text
         }.getOrDefault(text)
     }
 
@@ -433,7 +433,7 @@ internal object ConfigParser {
             when (scheme) {
                 "vmess" -> {
                     val payload = line.substringAfter("vmess://").substringBefore('#')
-                    val json = JSONObject(String(Base64.getDecoder().decode(padBase64(payload)), Charsets.UTF_8))
+                    val json = JSONObject(String(Base64.decode(padBase64(payload), Base64.DEFAULT), Charsets.UTF_8))
                     json.optString("add") to json.optString("port").toIntOrNull()
                 }
                 "ss" -> parseShadowsocksEndpoint(line.substringAfter("ss://"))
@@ -544,7 +544,7 @@ internal object ConfigParser {
 
     private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
         val decodedPart = if (!payload.substringBefore('@').contains(':') && !payload.contains('@')) {
-            runCatching { String(Base64.getDecoder().decode(padBase64(payload.substringBefore('#'))), Charsets.UTF_8) }.getOrNull() ?: payload
+            runCatching { String(Base64.decode(padBase64(payload.substringBefore('#')), Base64.DEFAULT), Charsets.UTF_8) }.getOrNull() ?: payload
         } else payload
         val authority = decodedPart.substringAfterLast('@').substringBefore('?').substringBefore('#')
         val hostPort = if (authority.startsWith("[")) {
