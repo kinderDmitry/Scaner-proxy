@@ -213,7 +213,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
     var scanFilter by remember { mutableStateOf("Все типы") }
-    var scanScope by remember { mutableStateOf("Интернет") }
+    var scanScope by remember { mutableStateOf("Весь мир") }
     var localResults by remember { mutableStateOf(emptyList<OpenEndpoint>()) }
     var errorMessage by remember { mutableStateOf("") }
     var autoRefresh by remember { mutableStateOf(true) }
@@ -441,12 +441,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text("ГДЕ ИСКАТЬ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    FlowChips(items = listOf("Интернет", "Локальная сеть"), selected = scanScope, onSelect = {
+                    FlowChips(items = listOf("Весь мир"), selected = scanScope, onSelect = {
                         scanScope = it
                         errorMessage = ""
                     })
                     Text(
-                        if (scanScope == "Интернет") "Публичные источники конфигураций. Фильтр ниже выбирает протокол." else "Автопоиск только в текущей Wi-Fi подсети — без ручного ввода IP и портов.",
+                        "Глобальный поиск по публичным источникам конфигураций со всего мира. Это не сканирование всех IP-адресов интернета: приложение загружает опубликованные узлы и проверяет их доступность.",
                         color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp
                     )
                     Text("ТИП ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
@@ -586,7 +586,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 }
             }
             item(key = "bulkImport") {
-                if (allItems.isNotEmpty() && scanScope == "Интернет") {
+                if (allItems.isNotEmpty()) {
                     Button(
                         onClick = { onBulkShare(allItems) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
