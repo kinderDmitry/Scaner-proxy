@@ -174,8 +174,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var onlyAvailable by remember { mutableStateOf(false) }
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
-    var showIpScanner by remember { mutableStateOf(false) }
-    var showScanModeDialog by remember { mutableStateOf(false) }
+    var scanMode by remember { mutableStateOf("Общедоступные прокси") }
     val context = LocalContext.current
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
@@ -253,8 +252,33 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    // Let the user choose the scan mode before the first network scan.
-    LaunchedEffect(Unit) { if (allItems.isEmpty()) showScanModeDialog = true }
+    fun startSelectedScan() {
+        if (loading || ipScanning) return
+        if (scanMode == "IP и порты") {
+            if (!authorizedScan) {
+                errorMessage = "Подтверди разрешение на проверку выбранной сети."
+                return
+            }
+            ipScanning = true
+            ipResults = emptyList()
+            ipScanStatus = "Подготовка диапазона…"
+            scope.launch {
+                try {
+                    val result = repo.scanAuthorizedRange(ipRange, ipPorts) { progress ->
+                        withContext(Dispatchers.Main) { ipScanStatus = progress }
+                    }
+                    ipResults = result.endpoints
+                    ipScanStatus = result.message
+                } catch (_: Exception) {
+                    ipScanStatus = "Не удалось проверить диапазон. Проверь IPv4/CIDR и список портов."
+                } finally {
+                    ipScanning = false
+                }
+            }
+        } else {
+            scan()
+        }
+    }
 
     val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
     val countries = listOf("Все страны") + allItems.map { it.country }.filter { it.isNotBlank() }.distinct().sorted()
@@ -286,13 +310,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
                         Text("ПОИСК  /  ОТКРЫТЫЕ ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp)
                     }
-                    IconButton(onClick = { showScanModeDialog = true }, enabled = !loading) {
+                    IconButton(onClick = { startSelectedScan() }, enabled = !loading && !ipScanning) {
                         Icon(Icons.Default.Refresh, "Обновить источники", tint = if (loading) TextMuted else Blue, modifier = Modifier.size(24.dp))
                     }
                 }
             }
             item(key = "hero") {
-                HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { showScanModeDialog = true }, enabled = !loading)
+                HeroPanel(loading = loading || ipScanning, checkingCount = checkingCount, onScan = { startSelectedScan() }, enabled = !loading && !ipScanning)
             }
             item(key = "backgroundMonitor") {
                 Column(
@@ -322,21 +346,60 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Text("Работает при заблокированном экране, но не при полностью выключенном телефоне. Android может ограничивать фоновые задачи.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
                 }
             }
-            item(key = "ipScanner") {
-                OutlinedButton(
-                    onClick = { showIpScanner = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Blue.copy(alpha = 0.45f)),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+            item(key = "scanMode") {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Surface).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Default.Radar, null, tint = Blue, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                        Text("Сканер IP и портов", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Только указанный диапазон · до 256 адресов", color = TextMuted, fontSize = 10.sp)
+                    Text("РЕЖИМ СКАНИРОВАНИЯ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf("IP и порты", "Общедоступные прокси").forEach { mode ->
+                            val selected = scanMode == mode
+                            Surface(
+                                modifier = Modifier.weight(1f).clickable(enabled = !loading && !ipScanning) { scanMode = mode; errorMessage = "" },
+                                color = if (selected) Color(0xFF123B5A) else SurfaceRaised,
+                                shape = RoundedCornerShape(11.dp),
+                                border = BorderStroke(1.dp, if (selected) Blue else Line)
+                            ) {
+                                Text(
+                                    mode, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                                    color = if (selected) Blue else TextPrimary, fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
                     }
-                    Icon(Icons.Default.OpenInNew, null, tint = Blue, modifier = Modifier.size(16.dp))
+                    if (scanMode == "IP и порты") {
+                        Text("Укажи только сеть или адреса, которые ты вправе проверять. Максимум 256 адресов и 8 портов за запуск.", color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                        OutlinedTextField(
+                            value = ipRange, onValueChange = { ipRange = it }, enabled = !ipScanning,
+                            label = { Text("IPv4 или CIDR") }, placeholder = { Text("192.168.1.0/24") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
+                        )
+                        OutlinedTextField(
+                            value = ipPorts, onValueChange = { ipPorts = it }, enabled = !ipScanning,
+                            label = { Text("TCP-порты через запятую (до 8)") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = authorizedScan, onCheckedChange = { authorizedScan = it }, enabled = !ipScanning, colors = CheckboxDefaults.colors(checkedColor = Blue, uncheckedColor = TextMuted))
+                            Text("У меня есть разрешение на проверку этой сети", color = TextPrimary, fontSize = 11.sp, lineHeight = 15.sp)
+                        }
+                    } else {
+                        Text("Поиск общедоступных конфигураций и проверка доступности через generate_204 для поддерживаемых протоколов.", color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
+                    Button(
+                        onClick = { startSelectedScan() },
+                        enabled = !loading && !ipScanning && (scanMode != "IP и порты" || authorizedScan),
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))
+                    ) {
+                        Icon(if (scanMode == "IP и порты") Icons.Default.Radar else Icons.Default.Search, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (loading || ipScanning) "Сканирование…" else "Сканировать", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             if (ipScanStatus.isNotBlank() || ipResults.isNotEmpty()) {
@@ -490,91 +553,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     }
 
 
-    if (showScanModeDialog) {
-        AlertDialog(
-            onDismissRequest = { if (!loading) showScanModeDialog = false },
-            containerColor = Surface,
-            title = { Text("Что сканируем?", color = TextPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Выбери режим перед запуском.", color = TextMuted, fontSize = 12.sp)
-                    OutlinedButton(
-                        onClick = { showScanModeDialog = false; showIpScanner = true },
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Blue.copy(alpha = 0.6f))
-                    ) {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
-                            Text("Сканер IP и портов", color = TextPrimary, fontWeight = FontWeight.Bold)
-                            Text("Проверка заданного IPv4/CIDR и TCP-портов", color = TextMuted, fontSize = 10.sp)
-                        }
-                    }
-                    Button(
-                        onClick = { showScanModeDialog = false; scan() },
-                        enabled = !loading, modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))
-                    ) {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
-                            Text("Общедоступные прокси", fontWeight = FontWeight.Bold)
-                            Text("Загрузка открытых конфигураций и проверка доступности", fontSize = 10.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showScanModeDialog = false }) { Text("Отмена", color = TextMuted) } }
-        )
-    }
 
-    if (showIpScanner) {
-        AlertDialog(
-            onDismissRequest = { if (!ipScanning) showIpScanner = false },
-            containerColor = Surface,
-            title = { Text("Сканер IP и портов", color = TextPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Проверяет выбранный IPv4-диапазон и порты TCP. Максимум 256 адресов и 8 портов за запуск. Можно указать публичный диапазон, только если у тебя есть разрешение на его проверку. Найденный порт не подтверждает наличие прокси.", color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp)
-                    OutlinedTextField(
-                        value = ipRange, onValueChange = { ipRange = it }, enabled = !ipScanning,
-                        label = { Text("IPv4 или CIDR") }, placeholder = { Text("192.168.1.0/24") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
-                    )
-                    OutlinedTextField(
-                        value = ipPorts, onValueChange = { ipPorts = it }, enabled = !ipScanning,
-                        label = { Text("Порты TCP (через запятую, до 8)") }, singleLine = false,
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = authorizedScan, onCheckedChange = { authorizedScan = it }, enabled = !ipScanning, colors = CheckboxDefaults.colors(checkedColor = Blue, uncheckedColor = TextMuted))
-                        Text("Я владелец сети/адресов или имею разрешение на проверку", color = TextPrimary, fontSize = 11.sp, lineHeight = 15.sp)
-                    }
-                    if (ipScanning) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Blue, trackColor = SurfaceRaised)
-                }
-            },
-            confirmButton = {
-                Button(
-                    enabled = !ipScanning && authorizedScan,
-                    onClick = {
-                        ipScanning = true
-                        ipResults = emptyList()
-                        ipScanStatus = "Подготовка диапазона…"
-                        scope.launch {
-                            val result = repo.scanAuthorizedRange(ipRange, ipPorts) { progress -> withContext(Dispatchers.Main) { ipScanStatus = progress } }
-                            ipResults = result.endpoints
-                            ipScanStatus = result.message
-                            ipScanning = false
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A)),
-                    shape = RoundedCornerShape(10.dp)
-                ) { Text(if (ipScanning) "Сканирую…" else "Начать проверку") }
-            },
-            dismissButton = {
-                TextButton(onClick = { if (!ipScanning) showIpScanner = false }, enabled = !ipScanning) { Text("Закрыть", color = TextMuted) }
-            }
-        )
-    }
 }
 
 @Composable
