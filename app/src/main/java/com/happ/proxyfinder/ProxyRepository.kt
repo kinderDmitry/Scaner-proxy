@@ -25,11 +25,9 @@ class ProxyRepository(context: Context) {
     private val sources = listOf(
         Source("Morpheus · Лучшие", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"),
         Source("Morpheus · Компактный", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt"),
-        Source("GFP · VLESS", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt"),
-        Source("GFP · VMess", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vmess.txt"),
-        Source("GFP · Trojan", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/trojan.txt"),
-        Source("GFP · Shadowsocks", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/ss.txt"),
-        Source("GFP · Hysteria2", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/hy2.txt")
+        Source("OpenProxyList · V2Ray", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt"),
+        Source("Pawdroid · Подписка", "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub"),
+        Source("V2RayAggregator · Объединённый список", "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt")
     )
 
     suspend fun fetch(onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
