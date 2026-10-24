@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -152,6 +153,16 @@ class MainActivity : ComponentActivity() {
                         onCopy = { value ->
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configuration", value))
+                            Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
+                        },
+                        onBulkShare = { items ->
+                            val payload = items.distinctBy { it.rawConfig }.joinToString("\\n") { namedConfigForImport(it) }
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, payload)
+                                putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${items.size} конфигураций")
+                            }
+                            startActivity(Intent.createChooser(send, "Передать ${items.size} конфигураций в HAPP"))
                         }
                     )
                 }
@@ -175,7 +186,7 @@ private fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(repo.loadSnapshot()) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
@@ -196,8 +207,36 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var scanScope by remember { mutableStateOf("Интернет") }
     var localResults by remember { mutableStateOf(emptyList<OpenEndpoint>()) }
     var errorMessage by remember { mutableStateOf("") }
+    var autoRefresh by remember { mutableStateOf(true) }
+    var autoCheckRunning by remember { mutableStateOf(false) }
+    var refreshCounter by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        var cursor = 0
+        while (true) {
+            delay(1000)
+            refreshCounter = (refreshCounter + 1) % 60
+            if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
+                val candidates = allItems
+                val candidate = candidates[cursor % candidates.size]
+                cursor = (cursor + 1) % candidates.size
+                autoCheckRunning = true
+                scope.launch {
+                    try {
+                        val checked = repo.check(candidate)
+                        val latest = allItems.map { if (it.id == checked.id) checked else it }
+                        persist(latest)
+                    } catch (_: Exception) {
+                        // A transient probe failure must not clear previously saved results.
+                    } finally {
+                        autoCheckRunning = false
+                    }
+                }
+            }
+        }
+    }
 
     fun persist(items: List<ProxyItem>) {
         allItems = items
@@ -418,6 +457,25 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                 }
             }
+            item(key = "autoRefresh") {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .background(Brush.horizontalGradient(listOf(Color(0xFF102A42), Surface)))
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF163A55)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Refresh, null, tint = Blue, modifier = Modifier.size(19.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Автообновление · 1 сек", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(if (autoRefresh) "Проверяется следующий узел по очереди" else "Автопроверка приостановлена", color = TextMuted, fontSize = 10.sp)
+                    }
+                    Switch(checked = autoRefresh, onCheckedChange = { autoRefresh = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
+                }
+            }
             item(key = "stats") {
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), Blue)
@@ -434,7 +492,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(9.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(sourceStatus, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (sourceProgress.isNotBlank()) sourceProgress else "Публичные источники · обновление по запросу", color = TextMuted, fontSize = 10.sp)
+                        Text(if (sourceProgress.isNotBlank()) sourceProgress else "Проверка UI: каждую секунду · цикл ${refreshCounter + 1}/60", color = TextMuted, fontSize = 10.sp)
                     }
                     if (loading || geoLoading) {
                         CircularProgressIndicator(Modifier.size(19.dp), color = Blue, strokeWidth = 2.dp)
@@ -487,6 +545,25 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             FilterChip(selected = onlyAvailable, onClick = { onlyAvailable = !onlyAvailable }, label = { Text("Соединение доступно") }, leadingIcon = if (onlyAvailable) ({ Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) }) else null)
                             FilterChip(selected = onlyFavorites, onClick = { onlyFavorites = !onlyFavorites }, label = { Text("Избранное") }, leadingIcon = if (onlyFavorites) ({ Icon(Icons.Default.Favorite, null, Modifier.size(16.dp)) }) else null)
                         }
+                    }
+                }
+            }
+            item(key = "bulkImport") {
+                if (allItems.isNotEmpty() && scanScope == "Интернет") {
+                    Button(
+                        onClick = { onBulkShare(allItems) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF174A38), contentColor = Color(0xFFD9FFF0)),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
+                    ) {
+                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(9.dp))
+                        Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
+                            Text("Передать все в HAPP", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("${allItems.size} конфигураций · страны и флаги сохранены", fontSize = 10.sp, color = Color(0xFFACDEC9))
+                        }
+                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
                 }
             }
