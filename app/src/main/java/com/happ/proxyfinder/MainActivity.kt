@@ -319,7 +319,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         geoLoading = true
                         val countryItems = repo.resolveCountries(allItems) { resolved ->
                             withContext(Dispatchers.Main) {
-                                allItems = allItems.map { if (it.host == resolved.host) resolved else it }
+                                allItems = allItems.map {
+                                if (it.host == resolved.host) it.copy(country = resolved.country, countryCode = resolved.countryCode) else it
+                            }
                             }
                         }
                         persist(countryItems)
@@ -453,7 +455,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Text("РЕЗУЛЬТАТЫ ЛОКАЛЬНОЙ СЕТИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
                         if (!loading && localResults.isEmpty() && errorMessage.isBlank()) {
-                            Text("Открытых портов не найдено. Устройство должно быть подключено к Wi-Fi.", color = TextMuted, fontSize = 11.sp)
+                            Text("На проверенных портах ничего не найдено. Убедись, что прокси-сервер включён и использует один из стандартных портов; ниже показана подсеть, которую проверило приложение.", color = TextMuted, fontSize = 11.sp, lineHeight = 16.sp)
                         }
                         localResults.forEach { endpoint -> LocalEndpointCard(endpoint) }
                     }
