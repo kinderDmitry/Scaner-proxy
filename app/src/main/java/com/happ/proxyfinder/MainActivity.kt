@@ -188,12 +188,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var onlyAvailable by remember { mutableStateOf(false) }
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
-    var scanMode by remember { mutableStateOf("Общедоступные прокси") }
     val context = LocalContext.current
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
     var scanFilter by remember { mutableStateOf("Все типы") }
+    var scanScope by remember { mutableStateOf("Интернет") }
+    var localResults by remember { mutableStateOf(emptyList<OpenEndpoint>()) }
     var errorMessage by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -208,6 +209,31 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         if (loading) return
         loading = true
         errorMessage = ""
+        if (scanScope == "Локальная сеть") {
+            sourceStatus = "Сканируем локальную Wi-Fi сеть"
+            sourceProgress = "Определяем локальную подсеть"
+            localResults = emptyList()
+            scope.launch {
+                try {
+                    val result = repo.scanLocalNetwork { progress ->
+                        withContext(Dispatchers.Main) { sourceProgress = progress }
+                    }
+                    localResults = result.endpoints
+                    sourceStatus = "Локальная сеть · найдено " + result.endpoints.size
+                    sourceProgress = result.message
+                    if (result.endpoints.isEmpty() && !result.message.startsWith("Локальная сеть")) {
+                        errorMessage = result.message
+                    }
+                } catch (_: Exception) {
+                    sourceStatus = "Локальное сканирование прервано"
+                    errorMessage = "Не удалось просканировать локальную сеть. Проверь подключение к Wi-Fi."
+                } finally {
+                    loading = false
+                    checkingCount = 0
+                }
+            }
+            return
+        }
         sourceStatus = "Подключаемся к открытым источникам"
         sourceProgress = "Подготовка"
         scope.launch {
@@ -338,8 +364,16 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Surface).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("ЧТО ИСКАТЬ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Text("Выбери тип прокси. Вводить IP и порты не нужно: поиск идёт по общедоступным источникам конфигураций.", color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                    Text("ГДЕ ИСКАТЬ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    FlowChips(items = listOf("Интернет", "Локальная сеть"), selected = scanScope, onSelect = {
+                        scanScope = it
+                        errorMessage = ""
+                    })
+                    Text(
+                        if (scanScope == "Интернет") "Публичные источники конфигураций. Фильтр ниже выбирает протокол." else "Автопоиск только в текущей Wi-Fi подсети — без ручного ввода IP и портов.",
+                        color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp
+                    )
+                    Text("ТИП ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                     val scanFilters = listOf("Все типы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
                     scanFilters.chunked(3).forEach { rowFilters ->
                         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
@@ -370,6 +404,17 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (loading) "Сканирование…" else "Сканировать", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            item(key = "localResults") {
+                if (scanScope == "Локальная сеть") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("РЕЗУЛЬТАТЫ ЛОКАЛЬНОЙ СЕТИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                        if (!loading && localResults.isEmpty() && errorMessage.isBlank()) {
+                            Text("Открытых портов не найдено. Устройство должно быть подключено к Wi-Fi.", color = TextMuted, fontSize = 11.sp)
+                        }
+                        localResults.forEach { endpoint -> LocalEndpointCard(endpoint) }
                     }
                 }
             }
@@ -529,6 +574,28 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
                 }
                 androidx.compose.foundation.Image(painter = painterResource(R.drawable.ic_happ_logo), contentDescription = "HAPP Proxy Finder", modifier = Modifier.size(62.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun LocalEndpointCard(endpoint: OpenEndpoint) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).padding(13.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.NetworkCheck, null, tint = if (endpoint.protocol == "TCP") Amber else Green, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(endpoint.host + ":" + endpoint.port, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                Text("Источник: Локальная сеть", color = TextMuted, fontSize = 10.sp)
+            }
+            Text("TCP " + endpoint.latencyMs + " мс", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Tag(endpoint.protocol, if (endpoint.protocol == "TCP") Color(0xFF3A2B1B) else Color(0xFF133853), if (endpoint.protocol == "TCP") Amber else Blue)
+            Text(endpoint.status, color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1f))
         }
     }
 }
