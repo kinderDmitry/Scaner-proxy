@@ -168,8 +168,11 @@ class ProxyRepository(private val context: Context) {
         val addresses = (networkStart + 1 until broadcast)
             .filter { it != ownLong }
             .map { value -> listOf(24, 16, 8, 0).joinToString(".") { shift -> ((value shr shift) and 255).toString() } }
+        val subnetAddress = listOf(24, 16, 8, 0)
+            .joinToString(".") { shift -> ((networkStart shr shift) and 255).toString() }
         val ports = listOf(1080, 1081, 10808, 10809, 3128, 3129, 8080, 8081, 8118, 8888, 7890, 7891, 7892, 8388, 9050, 9150, 4145, 8000)
         val tasks = addresses.flatMap { ip -> ports.map { port -> ip to port } }
+        onProgress("Wi-Fi $subnetAddress/$prefix · ${addresses.size} устройств × ${ports.size} портов")
         val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val gate = Semaphore(72)
@@ -185,7 +188,10 @@ class ProxyRepository(private val context: Context) {
             } }.awaitAll()
         }
         val sorted = found.sortedWith(compareBy<OpenEndpoint> { it.protocol == "TCP" }.thenBy { it.latencyMs }.thenBy { it.host }.thenBy { it.port })
-        EndpointScanResult(sorted, "Локальная сеть · найдено ${sorted.size} открытых портов; протокол подтверждён только для SOCKS5/HTTP CONNECT")
+        EndpointScanResult(
+            sorted,
+            "Wi-Fi $subnetAddress/$prefix · проверено ${tasks.size} комбинаций · найдено ${sorted.size} открытых портов. Только SOCKS5/HTTP CONNECT подтверждают тип прокси; TCP сам по себе не подтверждает прокси."
+        )
     }
 
     private fun probeLocalEndpoint(host: String, port: Int): OpenEndpoint? {
@@ -293,17 +299,18 @@ class ProxyRepository(private val context: Context) {
                 }
             }
         }.getOrDefault(emptyMap())
-        val candidates = items.filter { it.country.isBlank() && isIpv4(it.host) && !cached.containsKey(it.host) }
-            .distinctBy { it.host }.take(MAX_GEO_LOOKUPS)
+        val candidates = items.filter {
+            it.country.isBlank() && (isIpv4(it.host) || isResolvableHostname(it.host)) && !cached.containsKey(it.host)
+        }.distinctBy { it.host }.take(MAX_GEO_LOOKUPS)
         val updated = java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>()
-        val gate = Semaphore(3)
+        val gate = Semaphore(8)
         coroutineScope {
             candidates.map { item -> async {
                 gate.withPermit {
                     val foundCountry = runCatching {
                         val url = URL("https://ipwho.is/${item.host}?fields=success,country,country_code")
                         val conn = url.openConnection().apply {
-                            connectTimeout = 2800; readTimeout = 2800
+                            connectTimeout = 1800; readTimeout = 1800
                             setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
                         }
                         val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText().take(16_384) })
@@ -345,14 +352,26 @@ class ProxyRepository(private val context: Context) {
     }
 
     private fun isIpv4(host: String): Boolean {
-        val octets = host.split('.').mapNotNull { it.toIntOrNull() }
-        if (octets.size != 4 || octets.any { it !in 0..255 }) return false
+        val parts = host.split('.')
+        if (parts.size != 4) return false
+        val octets = parts.map { it.toIntOrNull() ?: return false }
+        if (octets.any { it !in 0..255 }) return false
         if (octets[0] == 0 || octets[0] == 10 || octets[0] == 127 || octets[0] >= 224) return false
         if (octets[0] == 169 && octets[1] == 254) return false
         if (octets[0] == 172 && octets[1] in 16..31) return false
         if (octets[0] == 192 && octets[1] == 168) return false
         if (octets[0] == 100 && octets[1] in 64..127) return false
         return true
+    }
+
+    private fun isResolvableHostname(host: String): Boolean {
+        if (host.length !in 4..253 || !host.contains('.') || !host.any { it.isLetter() }) return false
+        if (host.endsWith(".local", ignoreCase = true)) return false
+        return host.split('.').all { label ->
+            label.length in 1..63 &&
+                label.first().isLetterOrDigit() && label.last().isLetterOrDigit() &&
+                label.all { it.isLetterOrDigit() || it == '-' }
+        }
     }
 
     fun loadFavorites(): Set<String> = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
@@ -392,7 +411,7 @@ class ProxyRepository(private val context: Context) {
         private const val MAX_SOURCE_BYTES = 1_800_000
         private const val MAX_LINES = 20_000
         private const val MAX_SNAPSHOT = 2_500
-        private const val MAX_GEO_LOOKUPS = 160
+        private const val MAX_GEO_LOOKUPS = 120
     }
 }
 
