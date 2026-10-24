@@ -316,11 +316,34 @@ internal object ConfigParser {
         val port = endpoint.second ?: -1
         if (host.isBlank() || port !in 1..65535 || host.length > 253) return null
         val title = runCatching { line.substringAfter('#', "").substringBefore('?').let { java.net.URLDecoder.decode(it, "UTF-8") } }.getOrDefault("")
+        val countryInfo = parseCountryFromTitle(title)
         return ProxyItem(
             id = stableId(line), host = host, port = port, protocol = protocol,
-            source = sourceName, rawConfig = line, title = title.take(48),
-            checkStatus = "Не проверен"
+            source = "Сеть · " + sourceName, rawConfig = line, title = title.take(48),
+            checkStatus = "Не проверен", country = countryInfo.first, countryCode = countryInfo.second
         )
+    }
+
+    private fun parseCountryFromTitle(title: String): Pair<String, String> {
+        val points = title.codePoints().toArray()
+        for (i in 0 until (points.size - 1).coerceAtLeast(0)) {
+            val first = points[i]
+            val second = points[i + 1]
+            if (first in 0x1F1E6..0x1F1FF && second in 0x1F1E6..0x1F1FF) {
+                val code = ('A'.code + first - 0x1F1E6).toChar().toString() + ('A'.code + second - 0x1F1E6).toChar()
+                if (code in Locale.getISOCountries()) return countryName(code) to code
+            }
+        }
+        val bracketCode = Regex("\\[([A-Za-z]{2})\\]").find(title)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
+        if (bracketCode != null && bracketCode in Locale.getISOCountries()) {
+            return countryName(bracketCode) to bracketCode
+        }
+        return "" to ""
+    }
+
+    private fun countryName(code: String): String {
+        val name = Locale("", code).getDisplayCountry(Locale("ru"))
+        return name.takeIf { it.isNotBlank() } ?: code
     }
 
     private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
