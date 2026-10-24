@@ -170,7 +170,15 @@ class ProxyRepository(private val context: Context) {
             .map { value -> listOf(24, 16, 8, 0).joinToString(".") { shift -> ((value shr shift) and 255).toString() } }
         val subnetAddress = listOf(24, 16, 8, 0)
             .joinToString(".") { shift -> ((networkStart shr shift) and 255).toString() }
-        val ports = listOf(1080, 1081, 10808, 10809, 3128, 3129, 8080, 8081, 8118, 8888, 7890, 7891, 7892, 8388, 9050, 9150, 4145, 8000)
+        // Common proxy ports across Clash, sing-box, Squid, Privoxy, SOCKS and custom local gateways.
+        // A reachable TCP port is only a candidate; protocol handshakes below decide whether it is a proxy.
+        val ports = listOf(
+            1080, 1081, 1085, 10808, 10809, 10880,
+            3128, 3129, 3130, 4145, 4444,
+            5000, 5555, 6666, 7000, 7890, 7891, 7892, 7893,
+            8000, 8001, 8008, 8080, 8081, 8088, 8090, 8118, 8888, 8889,
+            9000, 9050, 9080, 9090, 9150, 10080, 10888, 1180, 20170, 4145, 8388
+        ).distinct()
         val tasks = addresses.flatMap { ip -> ports.map { port -> ip to port } }
         onProgress("Wi-Fi $subnetAddress/$prefix · ${addresses.size} устройств × ${ports.size} портов")
         val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
@@ -213,7 +221,8 @@ class ProxyRepository(private val context: Context) {
             val input = socket.getInputStream()
             val version = input.read()
             val method = input.read()
-            if (version == 5 && method in 0..255) {
+            // 0xFF means the server rejected every offered authentication method, not a usable SOCKS5 endpoint.
+            if (version == 5 && method in 0..254) {
                 return OpenEndpoint(host, port, tcpMs, "SOCKS5", if (method == 0) "SOCKS5 обнаружен · без авторизации" else "SOCKS5 обнаружен · может требоваться авторизация")
             }
         } catch (_: Exception) {
@@ -235,7 +244,7 @@ class ProxyRepository(private val context: Context) {
             "200" -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP CONNECT работает")
             "407" -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP-прокси обнаружен · требуется авторизация")
             null -> OpenEndpoint(host, port, tcpMs, "TCP", "Открытый TCP-порт · прокси не подтверждён")
-            else -> OpenEndpoint(host, port, tcpMs, "HTTP", "HTTP-прокси отвечает HTTP $httpStatus · туннель не подтверждён")
+            else -> OpenEndpoint(host, port, tcpMs, "TCP", "Открытый TCP-порт · HTTP CONNECT не подтверждён (HTTP $httpStatus)")
         }
     }
 
