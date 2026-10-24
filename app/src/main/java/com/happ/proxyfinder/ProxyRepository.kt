@@ -300,15 +300,34 @@ class ProxyRepository(private val context: Context) {
         coroutineScope {
             candidates.map { item -> async {
                 gate.withPermit {
-                    runCatching {
+                    val foundCountry = runCatching {
                         val url = URL("https://ipwho.is/${item.host}?fields=success,country,country_code")
-                        val conn = url.openConnection().apply { connectTimeout = 2200; readTimeout = 2200; setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.0") }
+                        val conn = url.openConnection().apply {
+                            connectTimeout = 2800; readTimeout = 2800
+                            setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
+                        }
                         val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText().take(16_384) })
                         if (json.optBoolean("success")) {
                             val country = json.optString("country").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-                            val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-                            if (country.isNotBlank()) updated[item.host] = country to code
+                            val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }
+                                ?.uppercase(Locale.ROOT).orEmpty()
+                            if (country.isNotBlank()) country to code else null
+                        } else null
+                    }.getOrNull() ?: runCatching {
+                        // Secondary provider helps when the primary geo API rate-limits or rejects a host.
+                        val conn = URL("https://ipapi.co/${item.host}/json/").openConnection().apply {
+                            connectTimeout = 2800; readTimeout = 2800
+                            setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
                         }
+                        val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText().take(16_384) })
+                        val country = json.optString("country_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                        val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }
+                            ?.uppercase(Locale.ROOT).orEmpty()
+                        if (country.isNotBlank()) country to code else null
+                    }.getOrNull()
+                    if (foundCountry != null) {
+                        updated[item.host] = foundCountry
+                        onResolved(item.copy(country = foundCountry.first, countryCode = foundCountry.second))
                     }
                 }
             } }.awaitAll()
@@ -373,7 +392,7 @@ class ProxyRepository(private val context: Context) {
         private const val MAX_SOURCE_BYTES = 1_800_000
         private const val MAX_LINES = 20_000
         private const val MAX_SNAPSHOT = 2_500
-        private const val MAX_GEO_LOOKUPS = 24
+        private const val MAX_GEO_LOOKUPS = 160
     }
 }
 
@@ -425,18 +444,75 @@ internal object ConfigParser {
     }
 
     private fun parseCountryFromTitle(title: String): Pair<String, String> {
+        val isoCodes = Locale.getISOCountries().toSet()
         val points = title.codePoints().toArray()
         for (i in 0 until (points.size - 1).coerceAtLeast(0)) {
             val first = points[i]
             val second = points[i + 1]
             if (first in 0x1F1E6..0x1F1FF && second in 0x1F1E6..0x1F1FF) {
                 val code = ('A'.code + first - 0x1F1E6).toChar().toString() + ('A'.code + second - 0x1F1E6).toChar()
-                if (code in Locale.getISOCountries()) return countryName(code) to code
+                if (code in isoCodes) return countryName(code) to code
             }
         }
-        val bracketCode = Regex("\\[([A-Za-z]{2})\\]").find(title)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
-        if (bracketCode != null && bracketCode in Locale.getISOCountries()) {
-            return countryName(bracketCode) to bracketCode
+
+        Regex("\\[([A-Za-z]{2})\\]|\\(([A-Za-z]{2})\\)").find(title)?.let { match ->
+            val code = (match.groupValues[1].ifBlank { match.groupValues[2] }).uppercase(Locale.ROOT)
+            if (code in isoCodes) return countryName(code) to code
+        }
+
+        val normalized = title.lowercase(Locale.ROOT)
+            .replace('_', ' ').replace('-', ' ')
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
+        val aliases = mapOf(
+            "usa" to "US", "u s a" to "US", "united states" to "US",
+            "united states of america" to "US", "america" to "US", "сша" to "US",
+            "deutschland" to "DE", "germany" to "DE", "германия" to "DE",
+            "россия" to "RU", "russia" to "RU", "russian federation" to "RU", "рф" to "RU",
+            "singapore" to "SG", "сингапур" to "SG",
+            "united kingdom" to "GB", "great britain" to "GB", "britain" to "GB",
+            "england" to "GB", "великобритания" to "GB", "англия" to "GB",
+            "holland" to "NL", "netherlands" to "NL", "нидерланды" to "NL", "голландия" to "NL",
+            "france" to "FR", "франция" to "FR", "japan" to "JP", "япония" to "JP",
+            "canada" to "CA", "канада" to "CA", "finland" to "FI", "финляндия" to "FI",
+            "sweden" to "SE", "швеция" to "SE", "switzerland" to "CH", "швейцария" to "CH",
+            "hong kong" to "HK", "гонконг" to "HK", "taiwan" to "TW", "тайвань" to "TW",
+            "poland" to "PL", "польша" to "PL", "turkey" to "TR", "türkiye" to "TR", "турция" to "TR",
+            "india" to "IN", "индия" to "IN", "indonesia" to "ID", "индонезия" to "ID",
+            "brazil" to "BR", "бразилия" to "BR", "australia" to "AU", "австралия" to "AU",
+            "ukraine" to "UA", "украина" to "UA", "czechia" to "CZ", "czech republic" to "CZ", "чехия" to "CZ",
+            "latvia" to "LV", "латвия" to "LV", "estonia" to "EE", "эстония" to "EE",
+            "lithuania" to "LT", "литва" to "LT", "austria" to "AT", "австрия" to "AT",
+            "romania" to "RO", "румыния" to "RO", "south korea" to "KR", "южная корея" to "KR",
+            "israel" to "IL", "израиль" to "IL", "italy" to "IT", "италия" to "IT",
+            "spain" to "ES", "испания" to "ES", "norway" to "NO", "норвегия" to "NO",
+            "belgium" to "BE", "бельгия" to "BE", "ireland" to "IE", "ирландия" to "IE",
+            "new zealand" to "NZ", "новая зеландия" to "NZ"
+        )
+        val allNames = (Locale.getISOCountries().flatMap { code ->
+            listOf(
+                Locale("", code).getDisplayCountry(Locale.ENGLISH) to code,
+                Locale("", code).getDisplayCountry(Locale("ru")) to code
+            )
+        } + aliases.map { it.key to it.value })
+            .filter { it.first.isNotBlank() && it.first.length > 2 }
+            .distinctBy { it.first.lowercase(Locale.ROOT) }
+            .sortedByDescending { it.first.length }
+
+        for ((name, code) in allNames) {
+            val normalizedName = name.lowercase(Locale.ROOT)
+                .replace('_', ' ').replace('-', ' ')
+                .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+                .replace(Regex("\\s+"), " ").trim()
+            if (normalizedName.isNotBlank() &&
+                Regex("(^|\\s)${Regex.escape(normalizedName)}(\\s|$)").containsMatchIn(normalized)
+            ) return countryName(code) to code
+        }
+
+        // Many feeds use a bare uppercase ISO code such as US-NYC or DE | Frankfurt.
+        Regex("(?<![A-Za-z])([A-Z]{2})(?![A-Za-z])").findAll(title).forEach { match ->
+            val code = match.groupValues[1]
+            if (code in isoCodes) return countryName(code) to code
         }
         return "" to ""
     }
