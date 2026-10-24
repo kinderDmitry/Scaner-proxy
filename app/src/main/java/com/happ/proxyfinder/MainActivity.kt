@@ -281,7 +281,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
-                        Text("FINDER  /  OPEN CONFIGS", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp)
+                        Text("ПОИСК  /  ОТКРЫТЫЕ ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp)
                     }
                     IconButton(onClick = { scan() }, enabled = !loading) {
                         Icon(Icons.Default.Refresh, "Обновить источники", tint = if (loading) TextMuted else Blue, modifier = Modifier.size(24.dp))
@@ -357,7 +357,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                                     Text(endpoint.portHint, color = TextMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    Text("${endpoint.latencyMs} ms", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("${endpoint.latencyMs} мс", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     IconButton(onClick = { onCopy("${endpoint.host}:${endpoint.port}") }, modifier = Modifier.size(26.dp)) {
                                         Icon(Icons.Default.ContentCopy, contentDescription = "Копировать IP и порт", tint = Blue, modifier = Modifier.size(14.dp))
                                     }
@@ -372,7 +372,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "stats") {
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), Blue)
-                    MetricCard("TCP online", allItems.count { it.isTcpReachable }.toString(), "порт отвечает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
+                    MetricCard("Доступен", allItems.count { it.isTcpReachable }.toString(), "порт отвечает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
                     MetricCard("Средний ping", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), Cyan)
                 }
             }
@@ -435,7 +435,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Страна", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         FlowChips(items = countries, selected = selectedCountry, onSelect = { selectedCountry = it })
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = onlyAvailable, onClick = { onlyAvailable = !onlyAvailable }, label = { Text("TCP доступен") }, leadingIcon = if (onlyAvailable) ({ Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) }) else null)
+                            FilterChip(selected = onlyAvailable, onClick = { onlyAvailable = !onlyAvailable }, label = { Text("Соединение доступно") }, leadingIcon = if (onlyAvailable) ({ Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) }) else null)
                             FilterChip(selected = onlyFavorites, onClick = { onlyFavorites = !onlyFavorites }, label = { Text("Избранное") }, leadingIcon = if (onlyFavorites) ({ Icon(Icons.Default.Favorite, null, Modifier.size(16.dp)) }) else null)
                         }
                     }
@@ -445,7 +445,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Результаты", color = TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text("Сначала лучшие по TCP-задержке", color = TextMuted, fontSize = 11.sp)
+                        Text("Сначала самые быстрые по задержке", color = TextMuted, fontSize = 11.sp)
                     }
                     Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF102B43)).padding(horizontal = 11.dp, vertical = 7.dp)) {
                         Text("${visible.size} узлов", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -536,7 +536,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     )
                     OutlinedTextField(
                         value = ipPorts, onValueChange = { ipPorts = it }, enabled = !ipScanning,
-                        label = { Text("TCP-порты (через запятую, до 8)") }, singleLine = false,
+                        label = { Text("Порты TCP (через запятую, до 8)") }, singleLine = false,
                         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Line, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedLabelColor = Blue, unfocusedLabelColor = TextMuted)
                     )
@@ -698,7 +698,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallMetric("PING", item.latencyMs?.let { "$it ms" } ?: "—", Icons.Default.Speed, Modifier.weight(1f))
+                SmallMetric("PING", item.latencyMs?.let { "$it мс" } ?: "—", Icons.Default.Speed, Modifier.weight(1f))
                 SmallMetric("ОЦЕНКА", if (item.qualityScore > 5) "${item.qualityScore}/100" else "—", Icons.Default.CheckCircle, Modifier.weight(1f))
                 SmallMetric("СТРАНА", if (item.countryCode.isNotBlank()) countryFlag(item.countryCode) + " " + item.countryCode.uppercase() else "🏳️", Icons.Default.LocationOn, Modifier.weight(1f))
             }
@@ -775,7 +775,7 @@ private fun EmptyState(loading: Boolean, onScan: () -> Unit) {
 
 private fun averageLatency(items: List<ProxyItem>): String {
     val values = items.filter { it.isTcpReachable }.mapNotNull { it.latencyMs }
-    return if (values.isEmpty()) "—" else "${values.average().toInt()} ms"
+    return if (values.isEmpty()) "—" else "${values.average().toInt()} мс"
 }
 
 private fun countryFlag(countryCode: String): String {
