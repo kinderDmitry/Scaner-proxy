@@ -229,7 +229,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         persist(allItems.map { updatedIds[it.id] ?: it })
                     }
                     sourceStatus = "Сканирование завершено"
-                    sourceProgress = "Проверено TCP: ${allItems.count { it.isChecked }} · найдено: ${allItems.size}"
+                    sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые прокси: ${allItems.count { it.isTunnelVerified }}"
                     if (allItems.any { it.country.isBlank() }) {
                         geoLoading = true
                         val countryItems = repo.resolveCountries(allItems) { resolved ->
@@ -251,7 +251,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    LaunchedEffect(Unit) { if (allItems.isEmpty()) scan() }
+    // Let the user choose the scan mode before the first network scan.
+    LaunchedEffect(Unit) { if (allItems.isEmpty()) showScanModeDialog = true }
 
     val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
     val countries = listOf("Все страны") + allItems.map { it.country }.filter { it.isNotBlank() }.distinct().sorted()
@@ -299,7 +300,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("Фоновая проверка", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("Обновление задержки через generate_204 каждые 5 минут при выключенном экране", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+                            Text("Проверка каждые 5 минут: generate_204 для HTTP/SOCKS5, TCP для остальных протоколов", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
                         }
                         Switch(
                             checked = backgroundMonitor,
@@ -694,7 +695,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                 Spacer(Modifier.weight(1f))
                 val statusColor = if (item.isTcpReachable) Green else if (item.checkStatus == "TCP недоступен") Red else Amber
                 Box(Modifier.size(6.dp).clip(CircleShape).background(statusColor))
-                Text(if (item.isTcpReachable) "TCP online" else if (item.checkStatus == "TCP недоступен") "Недоступен" else "Не проверен", color = statusColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Text(when { item.isTunnelVerified -> "Прокси проверен"; item.checkStatus.startsWith("TCP доступен") -> "TCP доступен"; item.checkStatus == "TCP недоступен" -> "Недоступен"; else -> "Не проверен" }, color = statusColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -774,7 +775,7 @@ private fun EmptyState(loading: Boolean, onScan: () -> Unit) {
 }
 
 private fun averageLatency(items: List<ProxyItem>): String {
-    val values = items.filter { it.isTcpReachable }.mapNotNull { it.latencyMs }
+    val values = items.filter { it.isTunnelVerified }.mapNotNull { it.latencyMs }
     return if (values.isEmpty()) "—" else "${values.average().toInt()} мс"
 }
 
