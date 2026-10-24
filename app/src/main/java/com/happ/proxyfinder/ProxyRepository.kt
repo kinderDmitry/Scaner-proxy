@@ -166,8 +166,12 @@ class ProxyRepository(context: Context) {
             val status = connection.responseCode
             val elapsed = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
             connection.disconnect()
-            if (status == 204) item.copy(checkStatus = "Проверен через generate_204 · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
-            else item.copy(checkStatus = "Прокси ответил HTTP $status на generate_204", latencyMs = elapsed, checkedAt = checkedAt)
+            if (status == 204) {
+                item.copy(checkStatus = "Проверен через generate_204 · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
+            } else {
+                // A response other than 204 is not a successful latency probe; never present it as a working proxy.
+                item.copy(checkStatus = "Проверка generate_204: неожиданный HTTP $status", latencyMs = null, checkedAt = checkedAt)
+            }
         } catch (_: Exception) {
             item.copy(checkStatus = "Проверка generate_204 не пройдена", latencyMs = null, checkedAt = checkedAt)
         }
@@ -403,17 +407,24 @@ data class ProxyItem(
     val country: String = "",
     val countryCode: String = ""
 ) {
-    val isTcpReachable: Boolean get() = checkStatus.startsWith("TCP доступен")
+    /** True only when the endpoint passed the protocol-aware probe or its TCP port answered. */
+    val isTcpReachable: Boolean get() =
+        checkStatus.startsWith("TCP доступен") || isTunnelVerified
+
+    /** A real HTTP 204 round-trip through HTTP/SOCKS; raw TCP checks do not qualify. */
+    val isTunnelVerified: Boolean get() = checkStatus.startsWith("Проверен через generate_204")
+
     val isChecked: Boolean get() = checkedAt != null
+
+    /** Quality is meaningful only when the proxy actually completed the generate_204 request. */
     val qualityScore: Int get() {
-        if (!isTcpReachable || latencyMs == null) return 0
-        val latencyScore = when {
+        if (!isTunnelVerified || latencyMs == null) return 0
+        return when {
             latencyMs < 100 -> 90
             latencyMs < 250 -> 80
             latencyMs < 500 -> 65
             latencyMs < 900 -> 45
             else -> 25
         }
-        return latencyScore
     }
 }
