@@ -137,24 +137,29 @@ class ProxyRepository(private val context: Context) {
      */
     suspend fun scanLocalNetwork(onProgress: suspend (String) -> Unit): EndpointScanResult = withContext(Dispatchers.IO) {
         val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val network = connectivity.activeNetwork
-            ?: return@withContext EndpointScanResult(emptyList(), "Нет активного сетевого подключения")
-        val capabilities = connectivity.getNetworkCapabilities(network)
-        if (capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) != true) {
-            return@withContext EndpointScanResult(emptyList(), "Для локального поиска подключись к Wi-Fi")
-        }
-        val linkProperties = connectivity.getLinkProperties(network)
-            ?: return@withContext EndpointScanResult(emptyList(), "Не удалось определить локальную сеть")
+        // activeNetwork may be a VPN tunnel. Select the actual Wi-Fi network from allNetworks first.
+        val wifiNetwork = connectivity.allNetworks.firstOrNull { candidate ->
+            connectivity.getNetworkCapabilities(candidate)
+                ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+        } ?: run {
+            val active = connectivity.activeNetwork
+            if (active != null && connectivity.getNetworkCapabilities(active)
+                    ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true) active else null
+        } ?: return@withContext EndpointScanResult(
+            emptyList(),
+            "Wi-Fi сеть не найдена. Подключись к Wi-Fi; если VPN скрывает сеть, временно отключи VPN и повтори поиск."
+        )
+        val linkProperties = connectivity.getLinkProperties(wifiNetwork)
+            ?: return@withContext EndpointScanResult(emptyList(), "Android не предоставил параметры Wi-Fi сети")
         val link = linkProperties.linkAddresses.firstOrNull {
             it.address is java.net.Inet4Address && !it.address.isLoopbackAddress && !it.address.isLinkLocalAddress
-        } ?: return@withContext EndpointScanResult(emptyList(), "Не удалось определить локальный IPv4-адрес")
-        val prefix = link.prefixLength
-        if (prefix !in 24..30) {
-            return@withContext EndpointScanResult(emptyList(), "Для безопасного локального сканирования поддерживаются Wi-Fi подсети /24–/30; обнаружена /$prefix")
-        }
+        } ?: return@withContext EndpointScanResult(emptyList(), "У Wi-Fi нет локального IPv4-адреса")
         val ownIp = link.address.hostAddress ?: return@withContext EndpointScanResult(emptyList(), "Не удалось прочитать IP устройства")
         val octets = ownIp.split('.').mapNotNull { it.toLongOrNull() }
         if (octets.size != 4) return@withContext EndpointScanResult(emptyList(), "Локальный IPv4-адрес некорректен")
+        // Keep the scan bounded to the /24 containing this device, even on larger home/office subnets.
+        val prefix = maxOf(link.prefixLength, 24)
+        if (prefix > 30) return@withContext EndpointScanResult(emptyList(), "Слишком маленькая подсеть Wi-Fi: /${link.prefixLength}")
         val ownLong = octets.fold(0L) { acc, value -> (acc shl 8) or value }
         val hostBits = 32 - prefix
         val mask = (0xFFFF_FFFFL shl hostBits) and 0xFFFF_FFFFL
@@ -163,11 +168,11 @@ class ProxyRepository(private val context: Context) {
         val addresses = (networkStart + 1 until broadcast)
             .filter { it != ownLong }
             .map { value -> listOf(24, 16, 8, 0).joinToString(".") { shift -> ((value shr shift) and 255).toString() } }
-        val ports = listOf(1080, 10808, 10809, 3128, 8080, 8081, 7890, 7891, 8888)
+        val ports = listOf(1080, 1081, 10808, 10809, 3128, 3129, 8080, 8081, 8118, 8888, 7890, 7891, 7892, 8388, 9050, 9150, 4145, 8000)
         val tasks = addresses.flatMap { ip -> ports.map { port -> ip to port } }
         val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
-        val gate = Semaphore(48)
+        val gate = Semaphore(72)
         coroutineScope {
             tasks.map { (ip, port) -> async {
                 gate.withPermit {
@@ -188,20 +193,20 @@ class ProxyRepository(private val context: Context) {
         val socket = java.net.Socket()
         val tcpMs = try {
             socket.tcpNoDelay = true
-            socket.connect(java.net.InetSocketAddress(host, port), 350)
+            socket.connect(java.net.InetSocketAddress(host, port), 450)
             ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
         } catch (_: Exception) {
             runCatching { socket.close() }
             return null
         }
         try {
-            socket.soTimeout = 250
+            socket.soTimeout = 350
             socket.getOutputStream().write(byteArrayOf(0x05, 0x01, 0x00))
             socket.getOutputStream().flush()
             val input = socket.getInputStream()
             val version = input.read()
             val method = input.read()
-            if (version == 5 && method in 0..254) {
+            if (version == 5 && method in 0..255) {
                 return OpenEndpoint(host, port, tcpMs, "SOCKS5", if (method == 0) "SOCKS5 обнаружен · без авторизации" else "SOCKS5 обнаружен · может требоваться авторизация")
             }
         } catch (_: Exception) {
@@ -210,8 +215,8 @@ class ProxyRepository(private val context: Context) {
         }
         val httpStatus = runCatching {
             java.net.Socket().use { http ->
-                http.connect(java.net.InetSocketAddress(host, port), 350)
-                http.soTimeout = 300
+                http.connect(java.net.InetSocketAddress(host, port), 450)
+                http.soTimeout = 350
                 http.getOutputStream().write("CONNECT www.gstatic.com:443 HTTP/1.1\r\nHost: www.gstatic.com:443\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
                 http.getOutputStream().flush()
                 val reader = http.getInputStream().bufferedReader(Charsets.US_ASCII)
