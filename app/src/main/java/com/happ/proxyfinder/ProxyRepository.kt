@@ -43,7 +43,8 @@ class ProxyRepository(private val context: Context) {
         Source("Delta-Kronecker · TCP pass 013", "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/tcp-pass/batch_013.txt"),
         Source("Delta-Kronecker · TCP pass 014", "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/tcp-pass/batch_014.txt"),
         Source("Coldwater · Sub7", "https://raw.githubusercontent.com/coldwater-10/V2ray-Config/main/Sub7.txt"),
-        Source("Sevcator · Mini", "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-69.txt")
+        Source("Sevcator · Mini", "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-69.txt"),
+        Source("SylphNet · Aggregated", "https://raw.githubusercontent.com/ProblemTheCode/SylphNet-public/main/sub/sub_plain.txt")
     )
 
     suspend fun fetch(onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
