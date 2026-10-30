@@ -27,16 +27,18 @@ class ProxyRepository(private val context: Context) {
     private val sources = listOf(
         Source("Morpheus · Лучшие", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"),
         Source("Morpheus · Компактный", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt"),
-        Source("Morpheus · TCP pass", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/tcp-pass.txt"),
         Source("OpenProxyList · V2Ray", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt"),
         Source("Pawdroid · Подписка", "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub"),
         Source("V2RayAggregator · Объединённый", "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"),
-        Source("V2RayAggregator · Base64", "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_base64.txt"),
         Source("Multi Proxy Config Fetcher · Telegram и URL", "https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/main/configs/proxy_configs.txt"),
         Source("Free Nodes Radar · V2Ray", "https://radarhub.top/v2ray.txt"),
         Source("GetFreeProxy · VLESS", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt"),
         Source("GetFreeProxy · VMess", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vmess.txt"),
         Source("GetFreeProxy · Trojan", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/trojan.txt"),
+        Source("GetFreeProxy · HTTP", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/http.txt"),
+        Source("GetFreeProxy · HTTPS", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/https.txt"),
+        Source("GetFreeProxy · SOCKS4", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks4.txt"),
+        Source("GetFreeProxy · SOCKS5", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"),
         Source("GetFreeProxy · Shadowsocks", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/ss.txt"),
         Source("GetFreeProxy · Hysteria2", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/hy2.txt"),
         Source("GetFreeProxy · TUIC", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/tuic.txt")
@@ -447,13 +449,16 @@ internal object ConfigParser {
     fun parseConfig(rawLine: String, sourceName: String = "Источник"): ProxyItem? {
         val line = rawLine.trim().removePrefix("\uFEFF")
         if (line.isBlank() || line.startsWith("#") || line.startsWith("//")) return null
-        val match = Regex("^(vless|vmess|trojan|ss|socks|socks5|hysteria2|hy2|tuic)://", RegexOption.IGNORE_CASE).find(line) ?: return null
+        val match = Regex("^(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://", RegexOption.IGNORE_CASE).find(line) ?: return null
         val scheme = match.groupValues[1].lowercase(Locale.ROOT)
         val protocol = when (scheme) {
             "hy2", "hysteria2" -> "Hysteria2"
             "tuic" -> "TUIC"
             "ss" -> "Shadowsocks"
             "socks", "socks5" -> "SOCKS5"
+            "socks4" -> "SOCKS4"
+            "http" -> "HTTP"
+            "https" -> "HTTPS"
             else -> scheme.uppercase(Locale.ROOT)
         }
         val endpoint = runCatching {
