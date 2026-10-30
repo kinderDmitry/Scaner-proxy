@@ -64,6 +64,23 @@ class ProxyItemTest {
         assertEquals("DE", parsed?.countryCode)
     }
 
+
+    @Test
+    fun parserRecognizesAllAdvertisedUriSchemes() {
+        val cases = listOf(
+            "socks4://127.0.0.1:1080" to "SOCKS4",
+            "socks5://127.0.0.1:1080" to "SOCKS5",
+            "http://127.0.0.1:8080" to "HTTP",
+            "https://127.0.0.1:8443" to "HTTPS",
+            "hysteria2://00000000-0000-0000-0000-000000000000@example.com:443" to "Hysteria2",
+            "hy2://00000000-0000-0000-0000-000000000000@example.com:443" to "Hysteria2",
+            "tuic://00000000-0000-0000-0000-000000000000@example.com:443" to "TUIC"
+        )
+        cases.forEach { (uri, expected) ->
+            assertEquals("Wrong protocol for $uri", expected, ConfigParser.parseConfig(uri)?.protocol)
+        }
+    }
+
     @Test
     fun successfulGenerate204IsVerifiedAndScored() {
         val proxy = item("Проверен через generate_204 · HTTP 204", 85)
