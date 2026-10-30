@@ -82,6 +82,22 @@ class ProxyItemTest {
     }
 
     @Test
+    fun parserAcceptsRawPublicProxyFeedEndpointsAfterSchemeNormalization() {
+        val cases = listOf(
+            "socks5://198.51.100.20:1080" to "SOCKS5",
+            "socks4://198.51.100.21:1080" to "SOCKS4",
+            "http://198.51.100.22:8080" to "HTTP",
+            "https://198.51.100.23:8443" to "HTTPS"
+        )
+        cases.forEach { (uri, expected) ->
+            val parsed = ConfigParser.parseConfig(uri, "public proxy list")
+            assertEquals(expected, parsed?.protocol)
+            assertEquals(uri, parsed?.rawConfig)
+            assertEquals("public proxy list", parsed?.source?.removePrefix("Сеть · "))
+        }
+    }
+
+    @Test
     fun successfulGenerate204IsVerifiedAndScored() {
         val proxy = item("Проверен через generate_204 · HTTP 204", 85)
 
