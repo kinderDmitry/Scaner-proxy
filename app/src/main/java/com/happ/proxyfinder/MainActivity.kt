@@ -356,7 +356,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
+    val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
     val countries = listOf("Все страны") + allItems.map { it.country }.filter { it.isNotBlank() }.distinct().sorted()
     val visible = allItems.filter { item ->
         val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country}"
@@ -488,7 +488,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
                     }
                     Text("ТИП ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    val scanFilters = listOf("Все типы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "SOCKS5")
+                    val scanFilters = listOf("Все типы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
                     scanFilters.chunked(3).forEach { rowFilters ->
                         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
                             rowFilters.forEach { filter ->
