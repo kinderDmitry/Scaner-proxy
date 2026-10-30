@@ -1,6 +1,9 @@
 package com.happ.proxyfinder
 
 import android.content.Context
+import android.content.ContentValues
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -21,6 +24,9 @@ import java.util.Locale
 /** Fetches public configuration feeds. Feed contents are untrusted input and are never executed. */
 class ProxyRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("proxy_finder", Context.MODE_PRIVATE)
+    private val store = ProxyStore(context)
+
+    init { migrateLegacySnapshot() }
 
     // Verified public feeds. Large all.txt bundles are intentionally avoided on mobile;
     // protocol-specific and quality-ranked bundles provide a better signal-to-bandwidth ratio.
@@ -44,7 +50,15 @@ class ProxyRepository(private val context: Context) {
         Source("Delta-Kronecker · TCP pass 014", "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/tcp-pass/batch_014.txt"),
         Source("Coldwater · Sub7", "https://raw.githubusercontent.com/coldwater-10/V2ray-Config/main/Sub7.txt"),
         Source("Sevcator · Mini", "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-69.txt"),
-        Source("SylphNet · Aggregated", "https://raw.githubusercontent.com/ProblemTheCode/SylphNet-public/main/sub/sub_plain.txt")
+        Source("SylphNet · Aggregated", "https://raw.githubusercontent.com/ProblemTheCode/SylphNet-public/main/sub/sub_plain.txt"),
+        Source("TheSpeedX · SOCKS5", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt", "socks5"),
+        Source("TheSpeedX · SOCKS4", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt", "socks4"),
+        Source("TheSpeedX · HTTP", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt", "http"),
+        Source("TheSpeedX · HTTPS", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/https.txt", "https"),
+        Source("monosans · SOCKS5", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt", "socks5"),
+        Source("monosans · SOCKS4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt", "socks4"),
+        Source("monosans · HTTP", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt", "http"),
+        Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https")
     )
 
     suspend fun fetch(onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
@@ -99,9 +113,12 @@ class ProxyRepository(private val context: Context) {
             if (text.isBlank()) throw java.io.IOException("Пустой ответ")
             val decoded = decodeSubscriptionIfNeeded(text)
             val seen = HashSet<String>()
-            return decoded.lineSequence().take(MAX_LINES).mapNotNull { raw ->
+            return decoded.lineSequence().mapNotNull { raw ->
                 val line = raw.trim().substringBefore(" | ").trim()
-                ConfigParser.parseConfig(line, source.name)
+                if (line.isBlank()) null else {
+                    val candidate = if (source.protocol != null && !line.contains("://")) "${source.protocol}://$line" else line
+                    ConfigParser.parseConfig(candidate, source.name)
+                }
             }.filter { seen.add(it.rawConfig) }.toList()
         } finally {
             connection.disconnect()
@@ -428,44 +445,119 @@ class ProxyRepository(private val context: Context) {
     fun loadFavorites(): Set<String> = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
     fun saveFavorites(ids: Set<String>) { prefs.edit().putStringSet("favorites", ids).apply() }
 
+    /** Upserts records into SQLite; scanning another protocol never deletes previous results. */
     fun saveSnapshot(items: List<ProxyItem>) {
-        val arr = JSONArray()
-        items.take(MAX_SNAPSHOT).forEach { item ->
-            arr.put(JSONObject().apply {
-                put("id", item.id); put("host", item.host); put("port", item.port); put("protocol", item.protocol)
-                put("source", item.source); put("rawConfig", item.rawConfig); put("status", item.checkStatus)
-                put("latency", item.latencyMs ?: -1); put("favorite", item.favorite); put("checked", item.checkedAt ?: 0L)
-                put("title", item.title); put("country", item.country); put("countryCode", item.countryCode)
-            })
-        }
-        prefs.edit().putString("snapshot", arr.toString()).apply()
+        store.upsert(items)
     }
 
-    fun loadSnapshot(): List<ProxyItem> = runCatching {
-        val arr = JSONArray(prefs.getString("snapshot", "[]"))
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            ProxyItem(
-                id = o.getString("id"), host = o.getString("host"), port = o.getInt("port"), protocol = o.getString("protocol"),
-                source = o.getString("source"), rawConfig = o.getString("rawConfig"), checkStatus = o.optString("status", "Не проверен"),
-                latencyMs = o.optInt("latency", -1).takeIf { it >= 0 }, favorite = o.optBoolean("favorite"),
-                checkedAt = o.optLong("checked").takeIf { it > 0 }, title = o.optString("title"),
-                country = o.optString("country"), countryCode = o.optString("countryCode")
-            )
-        }
-    }.getOrDefault(emptyList())
+    fun loadSnapshot(): List<ProxyItem> = store.readAll()
 
-    private data class Source(val name: String, val url: String)
+    private fun migrateLegacySnapshot() {
+        if (store.count() > 0) return
+        val legacy = runCatching {
+            val arr = JSONArray(prefs.getString("snapshot", "[]"))
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                ProxyItem(
+                    id = o.getString("id"), host = o.getString("host"), port = o.getInt("port"), protocol = o.getString("protocol"),
+                    source = o.getString("source"), rawConfig = o.getString("rawConfig"), checkStatus = o.optString("status", "Не проверен"),
+                    latencyMs = o.optInt("latency", -1).takeIf { it >= 0 }, favorite = o.optBoolean("favorite"),
+                    checkedAt = o.optLong("checked").takeIf { it > 0 }, title = o.optString("title"),
+                    country = o.optString("country"), countryCode = o.optString("countryCode")
+                )
+            }
+        }.getOrDefault(emptyList())
+        if (legacy.isNotEmpty()) store.upsert(legacy)
+        prefs.edit().remove("snapshot").apply()
+    }
+
+    private data class Source(val name: String, val url: String, val protocol: String? = null)
 
     companion object {
         private const val SPEED_TEST_URL = "https://www.gstatic.com/generate_204"
-        private const val MAX_SOURCE_BYTES = 1_800_000
-        private const val MAX_LINES = 20_000
-        private const val MAX_SNAPSHOT = 2_500
+        private const val MAX_SOURCE_BYTES = 8_000_000
         private const val MAX_GEO_LOOKUPS = 120
     }
 }
 
+
+
+/** Unbounded-by-arbitrary-row-count local result store. SQLite persists incrementally and deduplicates by raw config. */
+private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_results.db", null, 1) {
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE proxy_results (
+                id TEXT PRIMARY KEY NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                protocol TEXT NOT NULL,
+                source TEXT NOT NULL,
+                raw_config TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                latency INTEGER,
+                favorite INTEGER NOT NULL,
+                checked_at INTEGER,
+                title TEXT NOT NULL,
+                country TEXT NOT NULL,
+                country_code TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX idx_proxy_protocol ON proxy_results(protocol)")
+        db.execSQL("CREATE INDEX idx_proxy_host ON proxy_results(host)")
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+
+    fun count(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM proxy_results", null).use {
+        if (it.moveToFirst()) it.getInt(0) else 0
+    }
+
+    fun upsert(items: List<ProxyItem>) {
+        if (items.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            items.forEach { item ->
+                val values = ContentValues().apply {
+                    put("id", item.id); put("host", item.host); put("port", item.port); put("protocol", item.protocol)
+                    put("source", item.source); put("raw_config", item.rawConfig); put("status", item.checkStatus)
+                    if (item.latencyMs == null) putNull("latency") else put("latency", item.latencyMs)
+                    put("favorite", if (item.favorite) 1 else 0)
+                    if (item.checkedAt == null) putNull("checked_at") else put("checked_at", item.checkedAt)
+                    put("title", item.title); put("country", item.country); put("country_code", item.countryCode)
+                }
+                db.insertWithOnConflict("proxy_results", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun readAll(): List<ProxyItem> = readableDatabase.rawQuery(
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results ORDER BY rowid DESC",
+        null
+    ).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                fun string(name: String) = cursor.getString(cursor.getColumnIndexOrThrow(name)) ?: ""
+                fun nullableLong(name: String): Long? {
+                    val index = cursor.getColumnIndexOrThrow(name)
+                    return if (cursor.isNull(index)) null else cursor.getLong(index)
+                }
+                val latency = nullableLong("latency")?.toInt()
+                add(ProxyItem(
+                    id = string("id"), host = string("host"), port = cursor.getInt(cursor.getColumnIndexOrThrow("port")),
+                    protocol = string("protocol"), source = string("source"), rawConfig = string("raw_config"),
+                    checkStatus = string("status"), latencyMs = latency,
+                    favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
+                    checkedAt = nullableLong("checked_at"), title = string("title"),
+                    country = string("country"), countryCode = string("country_code")
+                ))
+            }
+        }
+    }
+}
 
 internal object ConfigParser {
     fun parseConfig(rawLine: String, sourceName: String = "Источник"): ProxyItem? {
