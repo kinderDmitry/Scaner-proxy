@@ -57,19 +57,22 @@ class ProxyRepository(private val context: Context) {
             sources.map { source -> async {
                 gate.withPermit {
                     onSource(source.name)
-                    runCatching { source.name to fetchSource(source) }
-                        .getOrElse { source.name to emptyList() }
+                    runCatching { SourceFetchResult(source.name, fetchSource(source), null) }
+                        .getOrElse { error ->
+                            SourceFetchResult(source.name, emptyList(), error.message?.take(100) ?: error.javaClass.simpleName)
+                        }
                 }
             } }.awaitAll()
         }
-        val sourceCounts = results.associate { it.first to it.second.size }
+        val sourceCounts = results.associate { it.name to it.items.size }
+        val sourceErrors = results.filter { it.error != null }.associate { it.name to it.error!! }
         val merged = linkedMapOf<String, ProxyItem>()
-        results.flatMap { it.second }.forEach { item ->
+        results.flatMap { it.items }.forEach { item ->
             val key = item.rawConfig.trim()
             if (key.isNotEmpty() && !merged.containsKey(key)) merged[key] = item
         }
         val favorites = loadFavorites()
-        FetchResult(merged.values.map { it.copy(favorite = favorites.contains(it.id)) }, sourceCounts)
+        FetchResult(merged.values.map { it.copy(favorite = favorites.contains(it.id)) }, sourceCounts, sourceErrors)
     }
 
     private fun fetchSource(source: Source): List<ProxyItem> {
@@ -652,7 +655,8 @@ internal object Ipv4RangeParser {
         .joinToString(".") { shift -> ((value shr shift) and 255).toString() }
 }
 
-data class FetchResult(val items: List<ProxyItem>, val sourceCounts: Map<String, Int>)
+data class SourceFetchResult(val name: String, val items: List<ProxyItem>, val error: String?)
+data class FetchResult(val items: List<ProxyItem>, val sourceCounts: Map<String, Int>, val sourceErrors: Map<String, String> = emptyMap())
 data class OpenEndpoint(val host: String, val port: Int, val latencyMs: Int, val protocol: String = "TCP", val status: String = "Открытый TCP-порт · прокси не подтверждён") {
     /** Port-number hint only; it is not protocol detection. */
     val portHint: String get() = when (port) {
