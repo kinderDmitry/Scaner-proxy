@@ -303,7 +303,14 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     .take(2500)
                 persist(merged)
                 sourceStatus = "Получено ${matchedItems.size} конфигураций по фильтру «$scanFilter»"
-                sourceProgress = "Источники: ${fetched.sourceCounts.count { it.value > 0 }}/${fetched.sourceCounts.size} отвечают"
+                sourceProgress = buildString {
+                    append("Источники: ${fetched.sourceCounts.count { it.value > 0 }}/${fetched.sourceCounts.size} с конфигурациями")
+                    if (fetched.sourceErrors.isNotEmpty()) {
+                        append(" · ошибок: ${fetched.sourceErrors.size}")
+                        append(" · ")
+                        append(fetched.sourceErrors.entries.take(2).joinToString("; ") { "${it.key}: ${it.value}" })
+                    }
+                }
                 if (matchedItems.isEmpty()) {
                     errorMessage = if (fetched.items.isEmpty()) {
                         "Источники не ответили или не содержат поддерживаемых конфигураций. Проверь подключение и повтори попытку."
