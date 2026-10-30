@@ -287,9 +287,11 @@ class ProxyRepository(private val context: Context) {
     suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
         val checkedAt = System.currentTimeMillis()
         if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
+        // Only these two proxy transports are actually exercised by HttpURLConnection here.
+        // HTTPS-proxy and SOCKS4 endpoints are currently reported as TCP-only, never as verified tunnels.
         val proxyType = when (item.protocol.uppercase(Locale.ROOT)) {
             "SOCKS5" -> Proxy.Type.SOCKS
-            "HTTP", "HTTPS" -> Proxy.Type.HTTP
+            "HTTP" -> Proxy.Type.HTTP
             else -> null
         }
         if (proxyType == null) {
