@@ -22,34 +22,44 @@ import java.util.Locale
 class ProxyRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("proxy_finder", Context.MODE_PRIVATE)
 
-    // Public feeds are independently fetched; failed or rate-limited sources do not stop the scan.
-    // Keep original configuration URIs intact for HAPP/Hiddify import.
+    // Verified public feeds. Large all.txt bundles are intentionally avoided on mobile;
+    // protocol-specific and quality-ranked bundles provide a better signal-to-bandwidth ratio.
     private val sources = listOf(
-        Source("Morpheus · Лучшие", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"),
-        Source("Morpheus · Компактный", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt"),
+        Source("Morpheus · Best", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"),
+        Source("Morpheus · Lite", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/lite.txt"),
+        Source("Morpheus · Mini", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt"),
+        Source("Morpheus · VLESS", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/vless.txt"),
+        Source("Morpheus · VMess", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/vmess.txt"),
+        Source("Morpheus · Trojan", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/trojan.txt"),
+        Source("Morpheus · Shadowsocks", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/shadowsocks.txt"),
+        Source("Morpheus · Hysteria2", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/hysteria2.txt"),
+        Source("Morpheus · TUIC", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/tuic.txt"),
+        Source("Morpheus · Reality", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/reality.txt"),
+        Source("Morpheus · TLS", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/tls.txt"),
+        Source("3inker · Проверенные RU", "https://raw.githubusercontent.com/3inker/v2ray-subscription/main/subs/all_ru.txt"),
+        Source("3inker · Проверенные международные", "https://raw.githubusercontent.com/3inker/v2ray-subscription/main/subs/all_not_ru.txt"),
+        Source("3inker · AetrisVPN blacklist feed", "https://raw.githubusercontent.com/flaafix/AetrisVPN-black-list/refs/heads/main/configs.txt"),
+        Source("3inker · AetrisVPN whitelist feed", "https://raw.githubusercontent.com/flaafix/AetrisVPN-white-list-lite/refs/heads/main/AetrisVPN.txt"),
+        Source("3inker · FlareFeed", "https://gitverse.ru/api/repos/Nokls/FlareFeed/raw/branch/main/public/fastest.txt"),
+        Source("3inker · VlessForU", "https://sub.vlessfo.ru/vlessforu/working_configs.txt"),
         Source("OpenProxyList · V2Ray", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt"),
-        Source("Pawdroid · Подписка", "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub"),
-        Source("V2RayAggregator · Объединённый", "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"),
-        Source("Multi Proxy Config Fetcher · Telegram и URL", "https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/main/configs/proxy_configs.txt"),
-        Source("Free Nodes Radar · V2Ray", "https://radarhub.top/v2ray.txt"),
-        Source("GetFreeProxy · VLESS", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt"),
-        Source("GetFreeProxy · VMess", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vmess.txt"),
-        Source("GetFreeProxy · Trojan", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/trojan.txt"),
-        Source("GetFreeProxy · HTTP", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/http.txt"),
-        Source("GetFreeProxy · HTTPS", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/https.txt"),
-        Source("GetFreeProxy · SOCKS4", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks4.txt"),
-        Source("GetFreeProxy · SOCKS5", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"),
-        Source("GetFreeProxy · Shadowsocks", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/ss.txt"),
-        Source("GetFreeProxy · Hysteria2", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/hy2.txt"),
-        Source("GetFreeProxy · TUIC", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/tuic.txt")
+        Source("Pawdroid · Free servers", "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub"),
+        Source("Multi Proxy Config Fetcher · Public channels", "https://raw.githubusercontent.com/4n0nymou3/multi-proxy-config-fetcher/main/configs/proxy_configs.txt"),
+        Source("Delta-Kronecker · TCP pass 013", "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/tcp-pass/batch_013.txt"),
+        Source("Delta-Kronecker · TCP pass 014", "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/tcp-pass/batch_014.txt"),
+        Source("Coldwater · Sub7", "https://raw.githubusercontent.com/coldwater-10/V2ray-Config/main/Sub7.txt"),
+        Source("Sevcator · Mini", "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-69.txt")
     )
 
     suspend fun fetch(onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
+        val gate = Semaphore(6)
         val results = coroutineScope {
             sources.map { source -> async {
-                onSource(source.name)
-                val parsed = runCatching { fetchSource(source) }.getOrDefault(emptyList())
-                source.name to parsed
+                gate.withPermit {
+                    onSource(source.name)
+                    runCatching { source.name to fetchSource(source) }
+                        .getOrElse { source.name to emptyList() }
+                }
             } }.awaitAll()
         }
         val sourceCounts = results.associate { it.first to it.second.size }
@@ -63,40 +73,51 @@ class ProxyRepository(private val context: Context) {
     }
 
     private fun fetchSource(source: Source): List<ProxyItem> {
-        val connection = URL(source.url).openConnection().apply {
-            connectTimeout = 6500
-            readTimeout = 8500
-            setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.0 (Android)")
-            setRequestProperty("Accept", "text/plain,*/*")
-        }
-        val text = connection.getInputStream().use { input ->
-            val out = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            var total = 0
-            while (true) {
-                val n = input.read(buffer)
-                if (n < 0) break
-                total += n
-                if (total > MAX_SOURCE_BYTES) break
-                out.write(buffer, 0, n)
+        val connection = URL(source.url).openConnection() as? java.net.HttpURLConnection
+            ?: throw IllegalStateException("Источник не использует HTTP")
+        try {
+            connection.connectTimeout = 8000
+            connection.readTimeout = 12000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty("User-Agent", "PROXY-HUNTER-X/2.0 (Android)")
+            connection.setRequestProperty("Accept", "text/plain,application/octet-stream,*/*")
+            connection.setRequestProperty("Cache-Control", "no-cache")
+            val status = connection.responseCode
+            if (status !in 200..299) throw java.io.IOException("HTTP $status")
+            val text = connection.inputStream.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    total += n
+                    if (total > MAX_SOURCE_BYTES) throw java.io.IOException("Превышен лимит источника")
+                    out.write(buffer, 0, n)
+                }
+                out.toString(Charsets.UTF_8.name())
             }
-            out.toString(Charsets.UTF_8.name())
+            if (text.isBlank()) throw java.io.IOException("Пустой ответ")
+            val decoded = decodeSubscriptionIfNeeded(text)
+            val seen = HashSet<String>()
+            return decoded.lineSequence().take(MAX_LINES).mapNotNull { raw ->
+                val line = raw.trim().substringBefore(" | ").trim()
+                ConfigParser.parseConfig(line, source.name)
+            }.filter { seen.add(it.rawConfig) }.toList()
+        } finally {
+            connection.disconnect()
         }
-        val decoded = decodeSubscriptionIfNeeded(text)
-        val seen = HashSet<String>()
-        return decoded.lineSequence().take(MAX_LINES).mapNotNull { raw ->
-            val line = raw.trim().substringBefore(" | ").trim()
-            ConfigParser.parseConfig(line, source.name)
-        }.filter { seen.add(it.rawConfig) }.toList()
     }
 
     private fun decodeSubscriptionIfNeeded(text: String): String {
-        if (text.contains(Regex("(?im)^\\s*(vless|vmess|trojan|ss|socks|hysteria2|hy2)://"))) return text
+        val schemePattern = Regex("(?im)^\\s*(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://")
+        if (schemePattern.containsMatchIn(text)) return text
         val compact = text.trim().replace("\\s".toRegex(), "")
         if (compact.length < 16 || !compact.matches(Regex("[A-Za-z0-9+/=_-]+"))) return text
         return runCatching {
             val padded = compact.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }
-            String(Base64.decode(padded, Base64.DEFAULT), Charsets.UTF_8).takeIf { it.contains("://") } ?: text
+            String(Base64.decode(padded, Base64.DEFAULT), Charsets.UTF_8)
+                .takeIf { schemePattern.containsMatchIn(it) } ?: text
         }.getOrDefault(text)
     }
 
