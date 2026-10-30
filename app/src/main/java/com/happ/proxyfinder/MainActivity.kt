@@ -297,12 +297,20 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     scanFilter == "Все типы" || item.protocol.equals(scanFilter, ignoreCase = true)
                 }
                 val matchedItems = fetched.items.filter(matchesFilter)
-                val oldFavorites = allItems.filter { it.favorite && matchesFilter(it) }.associateBy { it.id }
-                val merged = (matchedItems + oldFavorites.values).distinctBy { it.rawConfig }
-                    .map { item -> oldFavorites[item.id]?.let { item.copy(favorite = true) } ?: item }
-                    .take(2500)
+                val previousByConfig = allItems.associateBy { it.rawConfig.trim() }
+                val merged = (allItems + fetched.items).distinctBy { it.rawConfig.trim() }
+                    .map { fresh ->
+                        previousByConfig[fresh.rawConfig.trim()]?.let { previous ->
+                            fresh.copy(
+                                checkStatus = previous.checkStatus,
+                                latencyMs = previous.latencyMs,
+                                checkedAt = previous.checkedAt,
+                                favorite = previous.favorite || fresh.favorite
+                            )
+                        } ?: fresh
+                    }
                 persist(merged)
-                sourceStatus = "Получено ${matchedItems.size} конфигураций по фильтру «$scanFilter»"
+                sourceStatus = "Получено по фильтру «$scanFilter»: ${matchedItems.size} · всего в базе: ${merged.size}"
                 sourceProgress = buildString {
                     append("Источники: ${fetched.sourceCounts.count { it.value > 0 }}/${fetched.sourceCounts.size} с конфигурациями")
                     if (fetched.sourceErrors.isNotEmpty()) {
@@ -315,7 +323,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     errorMessage = if (fetched.items.isEmpty()) {
                         "Источники не ответили или не содержат поддерживаемых конфигураций. Проверь подключение и повтори попытку."
                     } else {
-                        "По фильтру «$scanFilter» конфигураций не найдено. Выбери «Все типы» или повтори позже."
+                        "По фильтру «$scanFilter» новых конфигураций нет. Ранее найденные узлы сохранены; выбери «Все типы» или другой протокол."
                     }
                 } else {
                     val batch = merged.filter { !it.isChecked }.take(48)
