@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -207,6 +208,10 @@ private fun namedConfigForImport(item: ProxyItem): String {
 private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var verifiedExportItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
+    var workerUrl by remember { mutableStateOf(repo.loadSubscriptionWorkerUrl()) }
+    var publishToken by remember { mutableStateOf(repo.loadSubscriptionToken()) }
+    var subscriptionUrl by remember { mutableStateOf(repo.loadSubscriptionUrl()) }
+    var publishingSubscription by remember { mutableStateOf(false) }
     var displayLimit by remember { mutableIntStateOf(100) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
@@ -309,6 +314,27 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             } finally {
                 autoCheckRunning = false
                 checkingCount = 0
+            }
+        }
+    }
+
+    fun publishVerifiedSubscription() {
+        if (publishingSubscription) return
+        publishingSubscription = true
+        errorMessage = ""
+        scope.launch {
+            try {
+                repo.saveSubscriptionSettings(workerUrl, publishToken)
+                val verified = withContext(Dispatchers.IO) { repo.loadVerifiedSnapshot() }
+                val publishedUrl = repo.publishSubscription(workerUrl, publishToken, verified)
+                subscriptionUrl = publishedUrl
+                sourceStatus = "Подписка обновлена: ${verified.size.coerceAtMost(1500)} проверенных конфигураций"
+                sourceProgress = "Ссылка ведёт на актуальный список и обновляется при повторной публикации"
+                Toast.makeText(context, "Ссылка подписки создана и обновлена", Toast.LENGTH_LONG).show()
+            } catch (error: Exception) {
+                errorMessage = error.message?.take(220) ?: "Не удалось опубликовать подписку"
+            } finally {
+                publishingSubscription = false
             }
         }
     }
@@ -684,6 +710,27 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                 }
                 Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+            }
+            item(key = "subscription") {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("ОНЛАЙН-ПОДПИСКА ДЛЯ HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Создаёт постоянную HTTPS-ссылку на список подтверждённых узлов. При повторной публикации ссылка остаётся той же, а её содержимое обновляется.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                    OutlinedTextField(value = workerUrl, onValueChange = { workerUrl = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Адрес Cloudflare Worker") }, placeholder = { Text("https://имя.workers.dev") }, enabled = !publishingSubscription)
+                    OutlinedTextField(value = publishToken, onValueChange = { publishToken = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Токен публикации") }, visualTransformation = PasswordVisualTransformation(), enabled = !publishingSubscription)
+                    Button(onClick = { publishVerifiedSubscription() }, enabled = !publishingSubscription && verifiedExportItems.any { it.isExportReady } && workerUrl.startsWith("https://") && publishToken.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))) {
+                        if (publishingSubscription) CircularProgressIndicator(Modifier.size(17.dp), color = Color(0xFF03101A), strokeWidth = 2.dp) else Icon(Icons.Default.CloudUpload, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (publishingSubscription) "Публикуем…" else "Создать / обновить ссылку", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    if (subscriptionUrl.isNotBlank()) {
+                        Text("ТВОЯ ССЫЛКА ПОДПИСКИ", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text(subscriptionUrl, color = TextPrimary, fontSize = 11.sp, lineHeight = 15.sp)
+                        OutlinedButton(onClick = { onCopy(subscriptionUrl) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Копировать ссылку для HAPP")
+                        }
+                    }
+                    Text("Нужен один раз развёрнутый Cloudflare Worker. Инструкция находится в папке subscription-worker репозитория. Ссылка приватная: любой, у кого она есть, сможет прочитать список.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                }
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
