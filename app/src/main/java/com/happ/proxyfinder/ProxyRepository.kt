@@ -31,12 +31,12 @@ class ProxyRepository(private val context: Context) {
     // Verified public feeds. Large all.txt bundles are intentionally avoided on mobile;
     // protocol-specific and quality-ranked bundles provide a better signal-to-bandwidth ratio.
     private val sources = listOf(
-        Source("Morpheus · Best", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"),
-        Source("Morpheus · Lite", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/lite.txt"),
-        Source("Morpheus · Mini", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt"),
-        Source("Morpheus · Trojan", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/trojan.txt"),
-        Source("Morpheus · Hysteria2", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/hysteria2.txt"),
-        Source("Morpheus · TUIC", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/tuic.txt"),
+        Source("Morpheus · Best", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt", protocol = "mixed"),
+        Source("Morpheus · Lite", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/lite.txt", protocol = "mixed"),
+        Source("Morpheus · Mini", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt", protocol = "mixed"),
+        Source("Morpheus · Trojan", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/trojan.txt", protocol = "trojan"),
+        Source("Morpheus · Hysteria2", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/hysteria2.txt", protocol = "hysteria2"),
+        Source("Morpheus · TUIC", "https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/tuic.txt", protocol = "tuic"),
         Source("3inker · Проверенные RU", "https://raw.githubusercontent.com/3inker/v2ray-subscription/main/subs/all_ru.txt"),
         Source("3inker · Проверенные международные", "https://raw.githubusercontent.com/3inker/v2ray-subscription/main/subs/all_not_ru.txt"),
         Source("3inker · AetrisVPN blacklist feed", "https://raw.githubusercontent.com/flaafix/AetrisVPN-black-list/refs/heads/main/configs.txt"),
@@ -61,10 +61,24 @@ class ProxyRepository(private val context: Context) {
         Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https")
     )
 
-    suspend fun fetch(onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
-        val gate = Semaphore(6)
+    suspend fun fetch(protocolFilter: String = "Все типы", onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
+        val filter = protocolFilter.uppercase(Locale.ROOT)
+        val selectedSources = when (filter) {
+            "SOCKS5" -> sources.filter { it.protocol.equals("socks5", true) }
+            "SOCKS4" -> sources.filter { it.protocol.equals("socks4", true) }
+            "HTTP" -> sources.filter { it.protocol.equals("http", true) }
+            "HTTPS" -> sources.filter { it.protocol.equals("https", true) }
+            "HYSTERIA2" -> sources.filter { it.protocol.equals("hysteria2", true) || it.protocol == "mixed" }
+            "TUIC" -> sources.filter { it.protocol.equals("tuic", true) || it.protocol == "mixed" }
+            "TROJAN" -> sources.filter { it.protocol.equals("trojan", true) || it.protocol == "mixed" || it.name.contains("3inker", true) }
+            "VLESS" -> sources.filter { it.protocol.equals("vless", true) || it.protocol == "mixed" || it.name.contains("Vless", true) || it.name.contains("3inker", true) }
+            "VMESS" -> sources.filter { it.protocol.equals("vmess", true) || it.protocol == "mixed" || it.name.contains("3inker", true) || it.name.contains("Pawdroid", true) || it.name.contains("SylphNet", true) }
+            "SHADOWSOCKS" -> sources.filter { it.protocol == "mixed" || it.name.contains("3inker", true) || it.name.contains("Pawdroid", true) }
+            else -> sources
+        }
+        val gate = Semaphore(if (protocolFilter == "Все типы") 4 else 3)
         val results = coroutineScope {
-            sources.map { source -> async {
+            selectedSources.map { source -> async {
                 gate.withPermit {
                     onSource(source.name)
                     runCatching { SourceFetchResult(source.name, fetchSource(source), null) }
@@ -77,7 +91,9 @@ class ProxyRepository(private val context: Context) {
         val sourceCounts = results.associate { it.name to it.items.size }
         val sourceErrors = results.filter { it.error != null }.associate { it.name to it.error!! }
         val merged = linkedMapOf<String, ProxyItem>()
-        results.flatMap { it.items }.forEach { item ->
+        results.flatMap { it.items }.asSequence()
+            .filter { protocolFilter == "Все типы" || it.protocol.equals(protocolFilter, ignoreCase = true) }
+            .forEach { item ->
             val key = item.rawConfig.trim()
             if (key.isNotEmpty() && !merged.containsKey(key)) merged[key] = item
         }
