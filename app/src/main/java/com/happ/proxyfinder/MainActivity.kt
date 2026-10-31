@@ -282,6 +282,37 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
+    fun checkNextBatch() {
+        if (loading || autoCheckRunning) return
+        val batch = allItems.filter { !it.isChecked && it.supportsNativeTunnelCheck }.take(48)
+        if (batch.isEmpty()) {
+            Toast.makeText(context, "Нет новых SOCKS4/SOCKS5/HTTP/HTTPS узлов для полной проверки. Для Shadowsocks, VLESS, VMess, Trojan, Hysteria2 и TUIC требуется sing-box core.", Toast.LENGTH_LONG).show()
+            return
+        }
+        autoCheckRunning = true
+        checkingCount = batch.size
+        sourceStatus = "Проверяем туннели · пакет из ${batch.size}"
+        sourceProgress = "Протокольная проверка с реальным HTTPS-запросом"
+        scope.launch {
+            try {
+                val updates = repo.checkBatch(batch) { checked ->
+                    allItems = allItems.map { if (it.id == checked.id) checked.copy(favorite = it.favorite) else it }
+                    checkingCount = (checkingCount - 1).coerceAtLeast(0)
+                }
+                val byId = updates.associateBy { it.id }
+                persist(allItems.map { byId[it.id]?.copy(favorite = it.favorite) ?: it })
+                val verifiedNow = updates.count { it.isTunnelVerified }
+                sourceStatus = "Пакет проверен: ${updates.size} · рабочих туннелей: $verifiedNow"
+                sourceProgress = "Можно запустить следующий пакет. Неподдерживаемые протоколы не выдаются за проверенные."
+            } catch (error: Exception) {
+                errorMessage = "Проверка пакета прервана: ${error.message?.take(100) ?: "ошибка сети"}"
+            } finally {
+                autoCheckRunning = false
+                checkingCount = 0
+            }
+        }
+    }
+
     fun scan() {
         if (loading) return
         selectedProtocol = if (scanFilter == "Все типы") "Все протоколы" else scanFilter
@@ -350,9 +381,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         "По фильтру «$scanFilter» новых конфигураций нет. Ранее найденные узлы сохранены; выбери «Все типы» или другой протокол."
                     }
                 } else {
-                    val batch = merged.filter { !it.isChecked }.take(48)
+                    val batch = merged.filter { !it.isChecked && it.supportsNativeTunnelCheck }.take(48)
                     if (batch.isNotEmpty()) {
-                        sourceStatus = "Проверяем доступность узлов"
+                        sourceStatus = "Проверяем поддерживаемые прокси-туннели"
                         checkingCount = batch.size
                         val updates = repo.checkBatch(batch) { checked ->
                             withContext(Dispatchers.Main) {
@@ -364,7 +395,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         persist(allItems.map { updatedIds[it.id] ?: it })
                     }
                     sourceStatus = "Сканирование завершено"
-                    sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые прокси: ${allItems.count { it.isTunnelVerified }}"
+                    sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { !it.isChecked && it.supportsNativeTunnelCheck }}"
                     if (allItems.any { it.country.isBlank() } && scanFilter == "Все типы") {
                         geoLoading = true
                         val countryItems = repo.resolveCountries(allItems.take(48).filter { it.country.isBlank() }) { resolved ->
@@ -634,6 +665,25 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         }
                     }
                 }
+            }
+            item(key = "checkBatch") {
+                val pendingNative = allItems.count { !it.isChecked && it.supportsNativeTunnelCheck }
+                Button(
+                    onClick = { checkNextBatch() },
+                    enabled = pendingNative > 0 && !loading && !autoCheckRunning,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF153B58), contentColor = Color(0xFFE5F5FF))
+                ) {
+                    if (autoCheckRunning) CircularProgressIndicator(Modifier.size(17.dp), color = Blue, strokeWidth = 2.dp)
+                    else Icon(Icons.Default.NetworkCheck, null, tint = Blue, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(if (autoCheckRunning) "Проверка туннелей…" else "Проверить следующие 48", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS ещё не проверены", fontSize = 10.sp, color = TextMuted)
+                    }
+                }
+                Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
