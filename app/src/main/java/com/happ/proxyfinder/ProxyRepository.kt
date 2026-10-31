@@ -396,17 +396,17 @@ class ProxyRepository(private val context: Context) {
                         tunnel = ssl
                     }
                     val auth = if (user != null) {
-                        val raw = "$user:\${pass ?: ""}".toByteArray(Charsets.UTF_8)
+                        val raw = "$user:${pass ?: ""}".toByteArray(Charsets.UTF_8)
                         "Proxy-Authorization: Basic " + android.util.Base64.encodeToString(raw, android.util.Base64.NO_WRAP) + "\r\n"
                     } else ""
-                    val request = "CONNECT $targetHost:$targetPort HTTP/1.1\r\nHost: $targetHost:$targetPort\r\n\${auth}Proxy-Connection: keep-alive\r\n\r\n"
+                    val request = "CONNECT $targetHost:$targetPort HTTP/1.1\r\nHost: $targetHost:$targetPort\r\n${auth}Proxy-Connection: keep-alive\r\n\r\n"
                     tunnel.getOutputStream().write(request.toByteArray(Charsets.US_ASCII)); tunnel.getOutputStream().flush()
                     val headers = readHttpHeaders(tunnel.getInputStream())
                     val status = Regex("^HTTP/1\\.[01] ([0-9]{3})").find(headers.lineSequence().firstOrNull().orEmpty())?.groupValues?.get(1)?.toIntOrNull()
                         ?: throw java.io.IOException("Некорректный ответ HTTP proxy")
                     if (status != 200) throw java.io.IOException("HTTP CONNECT отказал: $status")
                 }
-                else -> throw java.io.IOException("Для \${item.protocol} требуется встроенное sing-box ядро")
+                else -> throw java.io.IOException("Для ${item.protocol} требуется встроенное sing-box ядро")
             }
             val tls = javax.net.ssl.SSLSocketFactory.getDefault().createSocket(tunnel, targetHost, targetPort, true) as javax.net.ssl.SSLSocket
             tls.soTimeout = 5500
