@@ -107,6 +107,13 @@ class ProxyItemTest {
     }
 
     @Test
+    fun tcpOnlyResultsRemainEligibleForRetry() {
+        val tcpOnly = item("TCP доступен · туннель не подтверждён: timeout", null)
+        assertTrue(tcpOnly.supportsNativeTunnelCheck)
+        assertTrue(tcpOnly.needsNativeTunnelCheck)
+    }
+
+    @Test
     fun onlySuccessfulTunnelProbeIsEligibleForHappExport() {
         val verified = item("Проверен через generate_204 · HTTP 204", 85)
         val tcpOnly = item("TCP доступен · скорость туннеля не измерена: нужен core VLESS", 24)
