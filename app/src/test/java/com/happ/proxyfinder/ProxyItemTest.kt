@@ -98,6 +98,16 @@ class ProxyItemTest {
     }
 
     @Test
+    fun onlySuccessfulTunnelProbeIsEligibleForHappExport() {
+        val verified = item("Проверен через generate_204 · HTTP 204", 85)
+        val tcpOnly = item("TCP доступен · скорость туннеля не измерена: нужен core VLESS", 24)
+        val failed = item("Проверка generate_204 не пройдена", null)
+        assertTrue(verified.isExportReady)
+        assertFalse(tcpOnly.isExportReady)
+        assertFalse(failed.isExportReady)
+    }
+
+    @Test
     fun successfulGenerate204IsVerifiedAndScored() {
         val proxy = item("Проверен через generate_204 · HTTP 204", 85)
 
