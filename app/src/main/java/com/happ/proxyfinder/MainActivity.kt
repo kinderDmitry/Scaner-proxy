@@ -288,6 +288,23 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
+    suspend fun persistAndRefreshSubscription(items: List<ProxyItem>) {
+        allItems = items
+        val favorites = items.filter { it.favorite }.map { it.id }.toSet()
+        val verified = withContext(Dispatchers.IO) {
+            repo.saveSnapshot(items)
+            repo.saveFavorites(favorites)
+            repo.loadVerifiedSnapshot()
+        }
+        verifiedExportItems = verified
+        // Once the user has created a subscription, every completed verification batch refreshes its content.
+        if (subscriptionUrl.isNotBlank() && workerUrl.startsWith("https://") && publishToken.isNotBlank() && verified.isNotEmpty()) {
+            runCatching { repo.publishSubscription(workerUrl, publishToken, verified) }
+                .onSuccess { subscriptionUrl = it }
+                .onFailure { sourceProgress = "Не удалось обновить подписку: ${it.message?.take(100) ?: "ошибка сети"}" }
+        }
+    }
+
     fun checkNextBatch() {
         if (loading || autoCheckRunning) return
         val batch = allItems.filter { it.needsNativeTunnelCheck }.take(48)
@@ -306,7 +323,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     checkingCount = (checkingCount - 1).coerceAtLeast(0)
                 }
                 val byId = updates.associateBy { it.id }
-                persist(allItems.map { byId[it.id]?.copy(favorite = it.favorite) ?: it })
+                persistAndRefreshSubscription(allItems.map { byId[it.id]?.copy(favorite = it.favorite) ?: it })
                 val verifiedNow = updates.count { it.isTunnelVerified }
                 sourceStatus = "Пакет проверен: ${updates.size} · рабочих туннелей: $verifiedNow"
                 sourceProgress = "Можно запустить следующий пакет. Неподдерживаемые протоколы не выдаются за проверенные."
@@ -419,7 +436,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             }
                         }
                         val updatedIds = updates.associateBy { it.id }
-                        persist(allItems.map { updatedIds[it.id] ?: it })
+                        persistAndRefreshSubscription(allItems.map { updatedIds[it.id] ?: it })
+                    } else {
+                        persistAndRefreshSubscription(allItems)
                     }
                     sourceStatus = "Сканирование завершено"
                     sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
@@ -715,7 +734,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "subscription") {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("ОНЛАЙН-ПОДПИСКА ДЛЯ HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Создаёт постоянную HTTPS-ссылку на список подтверждённых узлов. При повторной публикации ссылка остаётся той же, а её содержимое обновляется.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
+                    Text("Создаёт постоянную HTTPS-ссылку на подтверждённые узлы. После каждого завершённого пакета проверок приложение автоматически обновляет содержимое этой же ссылки.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
                     OutlinedTextField(value = workerUrl, onValueChange = { workerUrl = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Адрес Cloudflare Worker") }, placeholder = { Text("https://имя.workers.dev") }, enabled = !publishingSubscription)
                     OutlinedTextField(value = publishToken, onValueChange = { publishToken = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Токен публикации") }, visualTransformation = PasswordVisualTransformation(), enabled = !publishingSubscription)
                     Button(onClick = { publishVerifiedSubscription() }, enabled = !publishingSubscription && verifiedExportItems.any { it.isExportReady } && workerUrl.startsWith("https://") && publishToken.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))) {
