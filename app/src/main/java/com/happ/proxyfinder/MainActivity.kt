@@ -961,8 +961,8 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                 Button(onClick = onShare, enabled = item.isTunnelVerified, modifier = Modifier.weight(1.1f), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
                     Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Передать", fontSize = 11.sp, maxLines = 1)
                 }
-                OutlinedButton(onClick = onCheck, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
-                    Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = Blue); Spacer(Modifier.width(5.dp)); Text("Проверить", fontSize = 11.sp, maxLines = 1, color = TextPrimary)
+                OutlinedButton(onClick = onCheck, enabled = item.supportsNativeTunnelCheck, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
+                    Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = if (item.supportsNativeTunnelCheck) Blue else Amber); Spacer(Modifier.width(5.dp)); Text(if (item.supportsNativeTunnelCheck) "Проверить" else "Нужен core", fontSize = 10.sp, maxLines = 1, color = TextPrimary)
                 }
                 IconButton(onClick = onCopy, enabled = item.isTunnelVerified, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
                     Icon(Icons.Default.ContentCopy, "Копировать ссылку", tint = Blue, modifier = Modifier.size(17.dp))
