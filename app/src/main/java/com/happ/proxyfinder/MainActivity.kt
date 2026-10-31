@@ -254,7 +254,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         while (true) {
             delay(15_000)
             if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
-                val candidates = allItems.asSequence().filter { it.isChecked }.take(48).toList().ifEmpty { allItems.take(48) }
+                val candidates = allItems.asSequence().filter { it.supportsNativeTunnelCheck && !it.isTunnelVerified }.take(48).toList().ifEmpty { allItems.take(48) }
                 val candidate = candidates[cursor % candidates.size]
                 cursor = (cursor + 1) % candidates.size
                 autoCheckRunning = true
@@ -290,7 +290,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun checkNextBatch() {
         if (loading || autoCheckRunning) return
-        val batch = allItems.filter { !it.isChecked && it.supportsNativeTunnelCheck }.take(48)
+        val batch = allItems.filter { it.needsNativeTunnelCheck }.take(48)
         if (batch.isEmpty()) {
             Toast.makeText(context, "Нет новых SOCKS4/SOCKS5/HTTP/HTTPS узлов для полной проверки. Для Shadowsocks, VLESS, VMess, Trojan, Hysteria2 и TUIC требуется sing-box core.", Toast.LENGTH_LONG).show()
             return
@@ -408,7 +408,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         "По фильтру «$scanFilter» новых конфигураций нет. Ранее найденные узлы сохранены; выбери «Все типы» или другой протокол."
                     }
                 } else {
-                    val batch = merged.filter { !it.isChecked && it.supportsNativeTunnelCheck }.take(48)
+                    val batch = merged.filter { it.needsNativeTunnelCheck }.take(48)
                     if (batch.isNotEmpty()) {
                         sourceStatus = "Проверяем поддерживаемые прокси-туннели"
                         checkingCount = batch.size
@@ -422,7 +422,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         persist(allItems.map { updatedIds[it.id] ?: it })
                     }
                     sourceStatus = "Сканирование завершено"
-                    sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { !it.isChecked && it.supportsNativeTunnelCheck }}"
+                    sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
                     if (allItems.any { it.country.isBlank() } && scanFilter == "Все типы") {
                         geoLoading = true
                         val countryItems = repo.resolveCountries(allItems.take(48).filter { it.country.isBlank() }) { resolved ->
@@ -694,7 +694,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 }
             }
             item(key = "checkBatch") {
-                val pendingNative = allItems.count { !it.isChecked && it.supportsNativeTunnelCheck }
+                val pendingNative = allItems.count { it.needsNativeTunnelCheck }
                 Button(
                     onClick = { checkNextBatch() },
                     enabled = pendingNative > 0 && !loading && !autoCheckRunning,
@@ -707,7 +707,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(8.dp))
                     Column(horizontalAlignment = Alignment.Start) {
                         Text(if (autoCheckRunning) "Проверка туннелей…" else "Проверить следующие 48", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS ещё не проверены", fontSize = 10.sp, color = TextMuted)
+                        Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS требуют проверки или повторной проверки", fontSize = 10.sp, color = TextMuted)
                     }
                 }
                 Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
