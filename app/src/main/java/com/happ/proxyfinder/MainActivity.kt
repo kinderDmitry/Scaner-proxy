@@ -552,7 +552,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Автообновление · 1 сек", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Автообновление · 15 сек", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(if (autoRefresh) "Проверяется следующий узел по очереди" else "Автопроверка приостановлена", color = TextMuted, fontSize = 10.sp)
                     }
                     Switch(checked = autoRefresh, onCheckedChange = {
@@ -578,7 +578,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(9.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(sourceStatus, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (sourceProgress.isNotBlank()) sourceProgress else "Автопроверка: 1 сек · цикл ${refreshCounter + 1}/60", color = TextMuted, fontSize = 10.sp)
+                        Text(if (sourceProgress.isNotBlank()) sourceProgress else "Автопроверка отключена или работает с интервалом 15 секунд", color = TextMuted, fontSize = 10.sp)
                     }
                     if (loading || geoLoading) {
                         CircularProgressIndicator(Modifier.size(19.dp), color = Blue, strokeWidth = 2.dp)
