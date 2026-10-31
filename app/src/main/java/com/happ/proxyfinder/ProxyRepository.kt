@@ -322,24 +322,37 @@ class ProxyRepository(private val context: Context) {
         if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
         val started = System.nanoTime()
         try {
-            val status = probeHttp204(item)
-            val elapsed = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
-            if (status == 204) item.copy(checkStatus = "Проверен через generate_204 · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
-            else item.copy(checkStatus = "Прокси ответил HTTP $status · проверка не пройдена", latencyMs = null, checkedAt = checkedAt)
+            val targets = listOf("www.gstatic.com" to "/generate_204", "cp.cloudflare.com" to "/generate_204")
+            var lastStatus: Int? = null
+            var lastError: Exception? = null
+            for ((targetHost, targetPath) in targets) {
+                try {
+                    val status = probeHttp204(item, targetHost, 443, targetPath)
+                    if (status == 204) {
+                        val elapsed = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+                        return@withContext item.copy(checkStatus = "Проверен через HTTPS-туннель · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
+                    }
+                    lastStatus = status
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    lastError = error
+                }
+            }
+            if (lastStatus != null) throw java.io.IOException("Проверка generate_204 вернула HTTP $lastStatus")
+            throw lastError ?: java.io.IOException("Нет ответа от контрольных серверов")
         } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
             val tcp = runCatching {
                 Socket().use { socket -> socket.connect(InetSocketAddress(item.host, item.port), 1800) }
                 true
             }.getOrDefault(false)
             val reason = error.message?.take(90)?.ifBlank { null } ?: error.javaClass.simpleName
-            if (tcp) item.copy(checkStatus = "TCP доступен · туннель не подтверждён: $reason", latencyMs = null, checkedAt = checkedAt)
+            if (tcp) item.copy(checkStatus = "TCP доступен · HTTPS-туннель не подтверждён: $reason", latencyMs = null, checkedAt = checkedAt)
             else item.copy(checkStatus = "Проверка не пройдена: $reason", latencyMs = null, checkedAt = checkedAt)
         }
     }
 
-    private fun probeHttp204(item: ProxyItem): Int {
-        val targetHost = "www.gstatic.com"
-        val targetPort = 443
+    private fun probeHttp204(item: ProxyItem, targetHost: String, targetPort: Int, targetPath: String): Int {
         val credentials = runCatching { URI(item.rawConfig).rawUserInfo }.getOrNull()
         val user = credentials?.substringBefore(':')?.let { java.net.URLDecoder.decode(it, "UTF-8") }
         val pass = credentials?.substringAfter(':', "")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
@@ -417,7 +430,7 @@ class ProxyRepository(private val context: Context) {
             parameters.endpointIdentificationAlgorithm = "HTTPS"
             tls.sslParameters = parameters
             tls.startHandshake()
-            tls.getOutputStream().write("GET /generate_204 HTTP/1.1\r\nHost: $targetHost\r\nConnection: close\r\nCache-Control: no-cache\r\nUser-Agent: HAPP-Proxy-Finder/2.0\r\n\r\n".toByteArray(Charsets.US_ASCII))
+            tls.getOutputStream().write("GET $targetPath HTTP/1.1\r\nHost: $targetHost\r\nConnection: close\r\nCache-Control: no-cache\r\nUser-Agent: HAPP-Proxy-Finder/2.0\r\n\r\n".toByteArray(Charsets.US_ASCII))
             tls.getOutputStream().flush()
             val statusLine = tls.getInputStream().bufferedReader(Charsets.US_ASCII).readLine().orEmpty()
             tls.close()
