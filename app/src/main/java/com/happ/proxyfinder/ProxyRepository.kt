@@ -390,7 +390,7 @@ class ProxyRepository(private val context: Context) {
                 }
                 "HTTP", "HTTPS" -> {
                     if (item.protocol.equals("HTTPS", true)) {
-                        val ssl = javax.net.ssl.SSLSocketFactory.getDefault().createSocket(socket, item.host, item.port, true) as javax.net.ssl.SSLSocket
+                        val ssl = (javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory).createSocket(socket, item.host, item.port, true) as javax.net.ssl.SSLSocket
                         ssl.soTimeout = 5500
                         val proxyTlsParameters = ssl.sslParameters
                         proxyTlsParameters.endpointIdentificationAlgorithm = "HTTPS"
@@ -411,7 +411,7 @@ class ProxyRepository(private val context: Context) {
                 }
                 else -> throw java.io.IOException("Для ${item.protocol} требуется встроенное sing-box ядро")
             }
-            val tls = javax.net.ssl.SSLSocketFactory.getDefault().createSocket(tunnel, targetHost, targetPort, true) as javax.net.ssl.SSLSocket
+            val tls = (javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory).createSocket(tunnel, targetHost, targetPort, true) as javax.net.ssl.SSLSocket
             tls.soTimeout = 5500
             val parameters = tls.sslParameters
             parameters.endpointIdentificationAlgorithm = "HTTPS"
