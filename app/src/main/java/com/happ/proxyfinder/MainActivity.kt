@@ -206,6 +206,8 @@ private fun namedConfigForImport(item: ProxyItem): String {
 @Composable
 private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
+    var verifiedExportItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
+    var displayLimit by remember { mutableIntStateOf(100) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
     var geoLoading by remember { mutableStateOf(false) }
@@ -234,8 +236,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     val listState = rememberLazyListState()
 
     LaunchedEffect(repo) {
-        val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(1000) }
+        val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
+        val verified = withContext(Dispatchers.IO) { repo.loadVerifiedSnapshot() }
         allItems = restored
+        verifiedExportItems = verified
         sourceStatus = if (restored.isEmpty()) "Готов к сканированию" else "Загружено ${restored.size} последних узлов · база сохранена"
     }
 
@@ -273,6 +277,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         scope.launch(Dispatchers.IO) {
             repo.saveSnapshot(items)
             repo.saveFavorites(favorites)
+            val verified = repo.loadVerifiedSnapshot()
+            withContext(Dispatchers.Main) { verifiedExportItems = verified }
         }
     }
 
@@ -312,9 +318,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     withContext(Dispatchers.Main) { sourceProgress = name }
                 }
                 val matchedItems = fetched.items
-                val previousByConfig = allItems.associateBy { it.rawConfig.trim() }
+                val currentItems = allItems
                 val merged = withContext(Dispatchers.Default) {
-                    (allItems + fetched.items).distinctBy { it.rawConfig.trim() }
+                    val previousByConfig = currentItems.associateBy { it.rawConfig.trim() }
+                    (currentItems + fetched.items).distinctBy { it.rawConfig.trim() }
                         .map { fresh ->
                             previousByConfig[fresh.rawConfig.trim()]?.let { previous ->
                                 fresh.copy(
@@ -390,6 +397,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             (selectedCountry == "Все страны" || item.country == selectedCountry) &&
             (!onlyAvailable || item.isTunnelVerified) && (!onlyFavorites || item.favorite)
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
+    val displayedItems = remember(visible, displayLimit) { visible.take(displayLimit) }
 
     Column(Modifier.fillMaxSize().background(Bg)) {
         LazyColumn(
@@ -629,7 +637,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
-                    val verifiedItems = allItems.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()
+                    val verifiedItems = verifiedExportItems.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Button(
                         onClick = { onBulkShare(verifiedItems) },
@@ -643,7 +651,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
                             Text("Передать проверенные в HAPP", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("${verifiedItems.size} подтверждённых туннелей из ${allItems.size} найденных", fontSize = 10.sp, color = Color(0xFFACDEC9))
+                            Text("${verifiedItems.size} подтверждённых туннелей · ${allItems.size} загружено в список", fontSize = 10.sp, color = Color(0xFFACDEC9))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
@@ -667,7 +675,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     EmptyState(loading = loading, onScan = { scan() })
                 }
             } else {
-                items(visible, key = { it.id }, contentType = { "proxy" }) { item ->
+                items(displayedItems, key = { it.id }, contentType = { "proxy" }) { item ->
                     ProxyCard(
                         item = item,
                         onFavorite = {
@@ -682,6 +690,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         },
                         onShare = { onShare(item) }, onCopy = { onCopy(namedConfigForImport(item)) }
                     )
+                }
+            }
+            if (displayedItems.size < visible.size) {
+                item(key = "loadMoreCards") {
+                    OutlinedButton(onClick = { displayLimit = (displayLimit + 100).coerceAtMost(visible.size) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Text("Показать ещё ${minOf(100, visible.size - displayedItems.size)} · осталось ${visible.size - displayedItems.size}", color = Blue)
+                    }
                 }
             }
             item(key = "disclaimer") {
