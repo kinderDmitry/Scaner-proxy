@@ -994,6 +994,9 @@ data class ProxyItem(
 
     val isChecked: Boolean get() = checkedAt != null
     val supportsNativeTunnelCheck: Boolean get() = protocol.uppercase(Locale.ROOT) in setOf("SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+    /** Retry unverified native-protocol endpoints after 10 minutes; TCP reachability is not completion. */
+    val needsNativeTunnelCheck: Boolean get() = supportsNativeTunnelCheck && !isTunnelVerified &&
+        (checkedAt == null || System.currentTimeMillis() - checkedAt >= 10 * 60 * 1000L)
     /** Only a successful end-to-end HTTP 204 proxy tunnel may be exported to HAPP. */
     val isExportReady: Boolean get() = isTunnelVerified && rawConfig.isNotBlank()
 
