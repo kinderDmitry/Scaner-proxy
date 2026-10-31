@@ -554,6 +554,86 @@ class ProxyRepository(private val context: Context) {
         }
     }
 
+    fun loadSubscriptionWorkerUrl(): String = prefs.getString("subscription_worker_url", "") ?: ""
+    fun loadSubscriptionUrl(): String = prefs.getString("subscription_url", "") ?: ""
+
+    fun saveSubscriptionSettings(workerUrl: String, token: String) {
+        prefs.edit().putString("subscription_worker_url", workerUrl.trim().trimEnd('/')).apply()
+        if (token.isNotBlank()) {
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, subscriptionKey())
+            val encrypted = cipher.doFinal(token.trim().toByteArray(Charsets.UTF_8))
+            prefs.edit()
+                .putString("subscription_token_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+                .putString("subscription_token_data", Base64.encodeToString(encrypted, Base64.NO_WRAP))
+                .apply()
+        }
+    }
+
+    fun loadSubscriptionToken(): String {
+        val ivText = prefs.getString("subscription_token_iv", null) ?: return ""
+        val dataText = prefs.getString("subscription_token_data", null) ?: return ""
+        return runCatching {
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            val iv = Base64.decode(ivText, Base64.NO_WRAP)
+            val data = Base64.decode(dataText, Base64.NO_WRAP)
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, subscriptionKey(), javax.crypto.spec.GCMParameterSpec(128, iv))
+            String(cipher.doFinal(data), Charsets.UTF_8)
+        }.getOrDefault("")
+    }
+
+    private fun subscriptionKey(): java.security.Key {
+        val alias = "happ_proxy_subscription_token_v1"
+        val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey(alias, null) as? java.security.Key)?.let { return it }
+        val generator = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                alias,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+            ).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+        )
+        return generator.generateKey()
+    }
+
+    suspend fun publishSubscription(workerUrl: String, token: String, items: List<ProxyItem>): String = withContext(Dispatchers.IO) {
+        val base = workerUrl.trim().trimEnd('/')
+        require(base.startsWith("https://")) { "Укажи HTTPS-адрес Cloudflare Worker" }
+        require(token.isNotBlank()) { "Не указан токен публикации" }
+        val configs = items.asSequence().filter { it.isExportReady }.map { it.rawConfig.trim() }
+            .filter { it.isNotBlank() }.distinct().take(1500).toList()
+        require(configs.isNotEmpty()) { "Нет подтверждённых конфигураций для публикации" }
+        val id = prefs.getString("subscription_id", null) ?: java.util.UUID.randomUUID().toString().also {
+            prefs.edit().putString("subscription_id", it).apply()
+        }
+        val connection = URL("$base/api/subscriptions/$id").openConnection() as java.net.HttpURLConnection
+        try {
+            connection.requestMethod = "PUT"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 15000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setRequestProperty("Accept", "application/json")
+            val body = JSONObject().put("configs", JSONArray(configs)).toString().toByteArray(Charsets.UTF_8)
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+            val code = connection.responseCode
+            val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText().take(32768) }.orEmpty()
+            if (code !in 200..299) throw java.io.IOException("Сервер подписки вернул HTTP $code: $response")
+            val published = JSONObject(response).optString("url")
+            require(published.startsWith("https://")) { "Сервер не вернул корректную ссылку подписки" }
+            prefs.edit().putString("subscription_url", published).apply()
+            published
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     fun loadFavorites(): Set<String> = prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
     fun saveFavorites(ids: Set<String>) { prefs.edit().putStringSet("favorites", ids).apply() }
 
