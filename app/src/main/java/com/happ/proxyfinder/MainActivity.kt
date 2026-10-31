@@ -103,6 +103,9 @@ class MainActivity : ComponentActivity() {
                     ProxyFinderScreen(
                         repo = repository,
                         onShare = { item ->
+                            if (!item.isTunnelVerified) {
+                                Toast.makeText(this, "Сначала проверь прокси. В HAPP отправляются только подтверждённые туннели.", Toast.LENGTH_LONG).show()
+                            } else {
                             val config = namedConfigForImport(item)
                             val choices = arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
                             AlertDialog.Builder(this)
@@ -149,6 +152,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 .setNegativeButton("Отмена", null)
                                 .show()
+                            }
                         },
                         onCopy = { value ->
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -156,18 +160,21 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
                         },
                         onBulkShare = { items ->
-                            val payload = "#subscription-ping-onopen-enabled: 1\n" + items.distinctBy { it.rawConfig }.joinToString("\n") { namedConfigForImport(it) }
+                            val verified = items.filter { it.isTunnelVerified }.distinctBy { it.rawConfig.trim() }
+                            if (verified.isNotEmpty()) {
+                            val payload = "#subscription-ping-onopen-enabled: 1\n" + verified.joinToString("\n") { namedConfigForImport(it) }
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, payload)
                                 putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${items.size} конфигураций")
                             }
-                            startActivity(Intent.createChooser(send, "Передать ${items.size} конфигураций в HAPP"))
+                            startActivity(Intent.createChooser(send, "Передать ${verified.size} проверенных прокси в HAPP"))
+                            } else Toast.makeText(this, "Нет проверенных прокси для импорта.", Toast.LENGTH_LONG).show()
                         },
                         onCopyAllJson = { items ->
                             // HAPP accepts a subscription-style text list of URI configurations.
                             // A JSON array of strings is not a valid Xray/HAPP JSON configuration.
-                            val unique = items.distinctBy { it.rawConfig.trim() }
+                            val unique = items.filter { it.isTunnelVerified }.distinctBy { it.rawConfig.trim() }
                                 .filter { it.rawConfig.isNotBlank() }
                             val payload = "#subscription-ping-onopen-enabled: 1\n" +
                                 unique.joinToString("\n") { namedConfigForImport(it) }
@@ -381,7 +388,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         (query.isBlank() || haystack.contains(query, true)) &&
             (selectedProtocol == "Все протоколы" || item.protocol.equals(selectedProtocol, true)) &&
             (selectedCountry == "Все страны" || item.country == selectedCountry) &&
-            (!onlyAvailable || item.isTcpReachable) && (!onlyFavorites || item.favorite)
+            (!onlyAvailable || item.isTunnelVerified) && (!onlyFavorites || item.favorite)
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
 
     Column(Modifier.fillMaxSize().background(Bg)) {
@@ -410,30 +417,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "hero") {
                 HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
             }
-            item(key = "exportJson") {
-                val exportItems = allItems.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
-                OutlinedButton(
-                    onClick = { onCopyAllJson(exportItems) },
-                    enabled = exportItems.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Cyan.copy(alpha = 0.5f)),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
-                ) {
-                    Icon(Icons.Default.ContentCopy, null, tint = Cyan, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(9.dp))
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                        Text("Копировать список конфигураций для HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("${exportItems.size} уникальных ссылок · только реальные результаты", color = TextMuted, fontSize = 10.sp)
-                    }
-                    Icon(Icons.Default.ContentCopy, null, tint = Cyan, modifier = Modifier.size(16.dp))
-                }
-                Text(
-                    "Копирует текстовый список ссылок VLESS/VMess/Trojan/SS для импорта в HAPP. Это список подписки, а не JSON-конфигурация Xray.",
-                    color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
             item(key = "backgroundMonitor") {
                 Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
@@ -442,7 +425,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("Фоновая проверка", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("Проверка каждые 5 минут: generate_204 для HTTP/SOCKS5, TCP для остальных протоколов", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+                            Text("HTTP/SOCKS5: проверка туннеля; остальные протоколы: пока только TCP-проверка", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
                         }
                         Switch(
                             checked = backgroundMonitor,
@@ -575,7 +558,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "stats") {
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), Blue)
-                    MetricCard("Доступен", allItems.count { it.isTcpReachable }.toString(), "порт отвечает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
+                    MetricCard("Проверен", allItems.count { it.isTunnelVerified }.toString(), "туннель работает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
                     MetricCard("Средний ping", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), Cyan)
                 }
             }
@@ -638,7 +621,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Страна", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         FlowChips(items = countries, selected = selectedCountry, onSelect = { selectedCountry = it })
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = onlyAvailable, onClick = { onlyAvailable = !onlyAvailable }, label = { Text("Соединение доступно") }, leadingIcon = if (onlyAvailable) ({ Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) }) else null)
+                            FilterChip(selected = onlyAvailable, onClick = { onlyAvailable = !onlyAvailable }, label = { Text("Туннель проверен") }, leadingIcon = if (onlyAvailable) ({ Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) }) else null)
                             FilterChip(selected = onlyFavorites, onClick = { onlyFavorites = !onlyFavorites }, label = { Text("Избранное") }, leadingIcon = if (onlyFavorites) ({ Icon(Icons.Default.Favorite, null, Modifier.size(16.dp)) }) else null)
                         }
                     }
@@ -646,9 +629,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
+                    val verifiedItems = allItems.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Button(
-                        onClick = { onBulkShare(allItems) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        onClick = { onBulkShare(verifiedItems) },
+                        enabled = verifiedItems.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
                         shape = RoundedCornerShape(15.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF174A38), contentColor = Color(0xFFD9FFF0)),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
@@ -656,10 +642,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(19.dp))
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
-                            Text("Передать все в HAPP", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("${allItems.size} конфигураций · страны и флаги сохранены", fontSize = 10.sp, color = Color(0xFFACDEC9))
+                            Text("Передать проверенные в HAPP", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("${verifiedItems.size} подтверждённых туннелей из ${allItems.size} найденных", fontSize = 10.sp, color = Color(0xFFACDEC9))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
+                    }
+                    Text(if (verifiedItems.isEmpty()) "Пока нет подтверждённых туннелей. TCP-ответ сам по себе не считается рабочим прокси." else "В экспорт попадут только уникальные узлы, прошедшие реальный запрос через прокси.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
                     }
                 }
             }
@@ -698,7 +686,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "disclaimer") {
                 Text(
-                    "Для HTTP и SOCKS5 измеряется задержка запроса к gstatic generate_204. Для VLESS, VMess и Shadowsocks без соответствующего прокси-ядра проверяется только TCP-порт. Бесплатные публичные узлы могут быть ненадёжными.",
+                    "В HAPP экспортируются только узлы с успешным HTTP 204 через прокси. Для VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC пока доступна только TCP-проверка — они не выдаются за проверенные туннели.",
                     color = TextMuted.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )
@@ -712,9 +700,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
 @Composable
 private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, enabled: Boolean) {
-    val infinite = rememberInfiniteTransition(label = "radar")
-    val pulse by infinite.animateFloat(initialValue = 0.86f, targetValue = 1.12f, animationSpec = infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
-    val rotation by infinite.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(tween(8500, easing = androidx.compose.animation.core.LinearEasing)), label = "rotation")
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
             .background(Brush.linearGradient(listOf(Color(0xFF102C48), Color(0xFF0D1829), Color(0xFF111626))))
@@ -731,7 +716,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
             Text("Выбери режим ниже и нажми «Сканировать».", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 15.sp)
         }
         Box(Modifier.size(124.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(112.dp).scale(pulse).clip(CircleShape).background(Blue.copy(alpha = 0.045f)))
+            Box(Modifier.size(112.dp).clip(CircleShape).background(Blue.copy(alpha = 0.045f)))
             Box(Modifier.size(94.dp).clip(CircleShape).background(Color(0xFF122A42)), contentAlignment = Alignment.Center) {
                 androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
                     val stroke = 1.dp.toPx()
@@ -739,7 +724,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
                     drawCircle(color = Blue.copy(alpha = 0.18f), radius = size.minDimension * 0.31f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
                     drawLine(color = Blue.copy(alpha = 0.13f), start = androidx.compose.ui.geometry.Offset(size.width / 2, 0f), end = androidx.compose.ui.geometry.Offset(size.width / 2, size.height), strokeWidth = stroke)
                     drawLine(color = Blue.copy(alpha = 0.13f), start = androidx.compose.ui.geometry.Offset(0f, size.height / 2), end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2), strokeWidth = stroke)
-                    rotate(rotation) {
+                    rotate(28f) {
                         drawArc(brush = Brush.sweepGradient(listOf(Color.Transparent, Blue.copy(alpha = 0.75f), Color.Transparent)), startAngle = 0f, sweepAngle = 110f, useCenter = true)
                     }
                     drawCircle(color = Cyan, radius = 3.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.36f))
@@ -828,7 +813,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
         Column(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(borderColor.copy(alpha = 0.08f), Color.Transparent))).padding(14.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF17273B)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Public, null, tint = if (item.isTcpReachable) Green else Blue, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Public, null, tint = if (item.isTunnelVerified) Green else Blue, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -844,7 +829,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                 Tag(item.protocol.uppercase(), Color(0xFF133853), Blue)
                 Tag("${countryFlag(item.countryCode)} ${item.country.ifBlank { "Страна не определена" }}", Color(0xFF1A2D2A), Green)
                 Spacer(Modifier.weight(1f))
-                val statusColor = if (item.isTcpReachable) Green else if (item.checkStatus == "TCP недоступен") Red else Amber
+                val statusColor = if (item.isTunnelVerified) Green else if (item.checkStatus == "TCP недоступен") Red else Amber
                 Box(Modifier.size(6.dp).clip(CircleShape).background(statusColor))
                 Text(when { item.isTunnelVerified -> "Прокси проверен"; item.checkStatus.startsWith("TCP доступен") -> "TCP доступен"; item.checkStatus == "TCP недоступен" -> "Недоступен"; else -> "Не проверен" }, color = statusColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -860,13 +845,13 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onShare, modifier = Modifier.weight(1.1f), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
+                Button(onClick = onShare, enabled = item.isTunnelVerified, modifier = Modifier.weight(1.1f), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
                     Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Передать", fontSize = 11.sp, maxLines = 1)
                 }
                 OutlinedButton(onClick = onCheck, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
                     Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = Blue); Spacer(Modifier.width(5.dp)); Text("Проверить", fontSize = 11.sp, maxLines = 1, color = TextPrimary)
                 }
-                IconButton(onClick = onCopy, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
+                IconButton(onClick = onCopy, enabled = item.isTunnelVerified, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
                     Icon(Icons.Default.ContentCopy, "Копировать ссылку", tint = Blue, modifier = Modifier.size(17.dp))
                 }
             }
