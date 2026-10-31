@@ -26,7 +26,6 @@ class ProxyRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("proxy_finder", Context.MODE_PRIVATE)
     private val store = ProxyStore(context)
 
-    init { migrateLegacySnapshot() }
 
     // Verified public feeds. Large all.txt bundles are intentionally avoided on mobile;
     // protocol-specific and quality-ranked bundles provide a better signal-to-bandwidth ratio.
@@ -466,7 +465,10 @@ class ProxyRepository(private val context: Context) {
         store.upsert(items)
     }
 
-    fun loadSnapshot(): List<ProxyItem> = store.readAll()
+    fun loadSnapshot(limit: Int = 1000): List<ProxyItem> {
+        migrateLegacySnapshot()
+        return store.readLatest(limit)
+    }
 
     private fun migrateLegacySnapshot() {
         if (store.count() > 0) return
@@ -550,9 +552,9 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
         }
     }
 
-    fun readAll(): List<ProxyItem> = readableDatabase.rawQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results ORDER BY rowid DESC",
-        null
+    fun readLatest(limit: Int): List<ProxyItem> = readableDatabase.rawQuery(
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results ORDER BY rowid DESC LIMIT ?",
+        arrayOf(limit.coerceIn(1, 5000).toString())
     ).use { cursor ->
         buildList {
             while (cursor.moveToNext()) {
