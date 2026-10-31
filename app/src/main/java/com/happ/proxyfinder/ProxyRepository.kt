@@ -374,9 +374,9 @@ class ProxyRepository(private val context: Context) {
                     if (reply != 0) throw java.io.IOException("SOCKS5 CONNECT отказал: $reply")
                     if (input.read() < 0) throw java.io.IOException("Оборван SOCKS5 ответ")
                     when (input.read()) {
-                        1 -> input.readNBytes(4)
-                        3 -> { val n = input.read(); if (n < 0) throw java.io.IOException("Оборван SOCKS5 адрес"); input.readNBytes(n) }
-                        4 -> input.readNBytes(16)
+                        1 -> readExact(input, 4)
+                        3 -> { val n = input.read(); if (n < 0) throw java.io.IOException("Оборван SOCKS5 адрес"); readExact(input, n) }
+                        4 -> readExact(input, 16)
                         else -> throw java.io.IOException("Неизвестный SOCKS5 адрес")
                     }
                     if (input.read() < 0 || input.read() < 0) throw java.io.IOException("Оборван SOCKS5 порт")
@@ -385,13 +385,16 @@ class ProxyRepository(private val context: Context) {
                     val out = socket.getOutputStream(); val input = socket.getInputStream()
                     val host = targetHost.toByteArray(Charsets.US_ASCII)
                     out.write(byteArrayOf(4, 1, (targetPort shr 8).toByte(), targetPort.toByte(), 0, 0, 0, 1, 0) + host + byteArrayOf(0)); out.flush()
-                    val response = input.readNBytes(8)
+                    val response = readExact(input, 8)
                     if (response.size != 8 || (response[1].toInt() and 0xff) != 90) throw java.io.IOException("SOCKS4a CONNECT отказал")
                 }
                 "HTTP", "HTTPS" -> {
                     if (item.protocol.equals("HTTPS", true)) {
                         val ssl = javax.net.ssl.SSLSocketFactory.getDefault().createSocket(socket, item.host, item.port, true) as javax.net.ssl.SSLSocket
                         ssl.soTimeout = 5500
+                        val proxyTlsParameters = ssl.sslParameters
+                        proxyTlsParameters.endpointIdentificationAlgorithm = "HTTPS"
+                        ssl.sslParameters = proxyTlsParameters
                         ssl.startHandshake()
                         tunnel = ssl
                     }
@@ -423,6 +426,17 @@ class ProxyRepository(private val context: Context) {
             runCatching { tunnel.close() }
             if (tunnel !== socket) runCatching { socket.close() }
         }
+    }
+
+    private fun readExact(input: java.io.InputStream, count: Int): ByteArray {
+        val result = ByteArray(count)
+        var offset = 0
+        while (offset < count) {
+            val read = input.read(result, offset, count - offset)
+            if (read < 0) throw java.io.IOException("Прокси оборвал handshake")
+            offset += read
+        }
+        return result
     }
 
     private fun readHttpHeaders(input: java.io.InputStream): String {
