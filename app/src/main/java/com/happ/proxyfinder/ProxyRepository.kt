@@ -316,54 +316,137 @@ class ProxyRepository(private val context: Context) {
         }
     }
 
+    /** End-to-end protocol probe. TCP reachability is never treated as a working tunnel. */
     suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
         val checkedAt = System.currentTimeMillis()
         if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
-        // Only these two proxy transports are actually exercised by HttpURLConnection here.
-        // HTTPS-proxy and SOCKS4 endpoints are currently reported as TCP-only, never as verified tunnels.
-        val proxyType = when (item.protocol.uppercase(Locale.ROOT)) {
-            "SOCKS5" -> Proxy.Type.SOCKS
-            "HTTP" -> Proxy.Type.HTTP
-            else -> null
-        }
-        if (proxyType == null) {
-            val started = System.nanoTime()
-            return@withContext try {
-                Socket().use { socket -> socket.tcpNoDelay = true; socket.connect(InetSocketAddress(item.host, item.port), 2600) }
-                val tcpMs = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
-                item.copy(checkStatus = "TCP доступен · скорость туннеля не измерена: нужен core ${item.protocol}", latencyMs = tcpMs, checkedAt = checkedAt)
-            } catch (_: Exception) {
-                item.copy(checkStatus = "TCP недоступен", latencyMs = null, checkedAt = checkedAt)
-            }
-        }
+        val started = System.nanoTime()
         try {
-            val proxy = Proxy(proxyType, InetSocketAddress(item.host, item.port))
-            val connection = URL(SPEED_TEST_URL).openConnection(proxy).apply {
-                connectTimeout = 4500
-                readTimeout = 4500
-                useCaches = false
-                setRequestProperty("Cache-Control", "no-cache, no-store")
-                setRequestProperty("Pragma", "no-cache")
-                setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
-            } as java.net.HttpURLConnection
-            val started = System.nanoTime()
-            connection.instanceFollowRedirects = false
-            val status = connection.responseCode
+            val status = probeHttp204(item)
             val elapsed = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
-            connection.disconnect()
-            if (status == 204) {
-                item.copy(checkStatus = "Проверен через generate_204 · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
-            } else {
-                // A response other than 204 is not a successful latency probe; never present it as a working proxy.
-                item.copy(checkStatus = "Проверка generate_204: неожиданный HTTP $status", latencyMs = null, checkedAt = checkedAt)
-            }
-        } catch (_: Exception) {
-            item.copy(checkStatus = "Проверка generate_204 не пройдена", latencyMs = null, checkedAt = checkedAt)
+            if (status == 204) item.copy(checkStatus = "Проверен через generate_204 · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
+            else item.copy(checkStatus = "Прокси ответил HTTP $status · проверка не пройдена", latencyMs = null, checkedAt = checkedAt)
+        } catch (error: Exception) {
+            val tcp = runCatching {
+                Socket().use { socket -> socket.connect(InetSocketAddress(item.host, item.port), 1800) }
+                true
+            }.getOrDefault(false)
+            val reason = error.message?.take(90)?.ifBlank { null } ?: error.javaClass.simpleName
+            if (tcp) item.copy(checkStatus = "TCP доступен · туннель не подтверждён: $reason", latencyMs = null, checkedAt = checkedAt)
+            else item.copy(checkStatus = "Проверка не пройдена: $reason", latencyMs = null, checkedAt = checkedAt)
         }
     }
 
+    private fun probeHttp204(item: ProxyItem): Int {
+        val targetHost = "www.gstatic.com"
+        val targetPort = 443
+        val credentials = runCatching { URI(item.rawConfig).rawUserInfo }.getOrNull()
+        val user = credentials?.substringBefore(':')?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+        val pass = credentials?.substringAfter(':', "")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+        val socket = Socket()
+        socket.tcpNoDelay = true
+        socket.soTimeout = 5500
+        socket.connect(InetSocketAddress(item.host, item.port), 4500)
+        var tunnel: java.net.Socket = socket
+        try {
+            when (item.protocol.uppercase(Locale.ROOT)) {
+                "SOCKS5" -> {
+                    val out = socket.getOutputStream()
+                    val input = socket.getInputStream()
+                    out.write(if (user != null) byteArrayOf(5, 2, 0, 2) else byteArrayOf(5, 1, 0)); out.flush()
+                    if (input.read() != 5) throw java.io.IOException("Некорректный SOCKS5 handshake")
+                    when (input.read()) {
+                        0 -> Unit
+                        2 -> {
+                            if (user == null) throw java.io.IOException("SOCKS5 требует логин и пароль")
+                            val u = user.toByteArray(Charsets.UTF_8); val p = (pass ?: "").toByteArray(Charsets.UTF_8)
+                            if (u.size > 255 || p.size > 255) throw java.io.IOException("Слишком длинные данные авторизации")
+                            out.write(byteArrayOf(1, u.size.toByte()) + u + byteArrayOf(p.size.toByte()) + p); out.flush()
+                            if (input.read() != 1 || input.read() != 0) throw java.io.IOException("SOCKS5: ошибка авторизации")
+                        }
+                        255 -> throw java.io.IOException("SOCKS5 отклонил методы авторизации")
+                        else -> throw java.io.IOException("SOCKS5 выбрал неизвестный метод")
+                    }
+                    val host = targetHost.toByteArray(Charsets.US_ASCII)
+                    out.write(byteArrayOf(5, 1, 0, 3, host.size.toByte()) + host + byteArrayOf((targetPort shr 8).toByte(), targetPort.toByte())); out.flush()
+                    if (input.read() != 5) throw java.io.IOException("SOCKS5 CONNECT не принят")
+                    val reply = input.read()
+                    if (reply != 0) throw java.io.IOException("SOCKS5 CONNECT отказал: $reply")
+                    if (input.read() < 0) throw java.io.IOException("Оборван SOCKS5 ответ")
+                    when (input.read()) {
+                        1 -> input.readNBytes(4)
+                        3 -> { val n = input.read(); if (n < 0) throw java.io.IOException("Оборван SOCKS5 адрес"); input.readNBytes(n) }
+                        4 -> input.readNBytes(16)
+                        else -> throw java.io.IOException("Неизвестный SOCKS5 адрес")
+                    }
+                    if (input.read() < 0 || input.read() < 0) throw java.io.IOException("Оборван SOCKS5 порт")
+                }
+                "SOCKS4" -> {
+                    val out = socket.getOutputStream(); val input = socket.getInputStream()
+                    val host = targetHost.toByteArray(Charsets.US_ASCII)
+                    out.write(byteArrayOf(4, 1, (targetPort shr 8).toByte(), targetPort.toByte(), 0, 0, 0, 1, 0) + host + byteArrayOf(0)); out.flush()
+                    val response = input.readNBytes(8)
+                    if (response.size != 8 || (response[1].toInt() and 0xff) != 90) throw java.io.IOException("SOCKS4a CONNECT отказал")
+                }
+                "HTTP", "HTTPS" -> {
+                    if (item.protocol.equals("HTTPS", true)) {
+                        val ssl = javax.net.ssl.SSLSocketFactory.getDefault().createSocket(socket, item.host, item.port, true) as javax.net.ssl.SSLSocket
+                        ssl.soTimeout = 5500
+                        ssl.startHandshake()
+                        tunnel = ssl
+                    }
+                    val auth = if (user != null) {
+                        val raw = "$user:\${pass ?: ""}".toByteArray(Charsets.UTF_8)
+                        "Proxy-Authorization: Basic " + android.util.Base64.encodeToString(raw, android.util.Base64.NO_WRAP) + "\r\n"
+                    } else ""
+                    val request = "CONNECT $targetHost:$targetPort HTTP/1.1\r\nHost: $targetHost:$targetPort\r\n\${auth}Proxy-Connection: keep-alive\r\n\r\n"
+                    tunnel.getOutputStream().write(request.toByteArray(Charsets.US_ASCII)); tunnel.getOutputStream().flush()
+                    val headers = readHttpHeaders(tunnel.getInputStream())
+                    val status = Regex("^HTTP/1\\.[01] ([0-9]{3})").find(headers.lineSequence().firstOrNull().orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+                        ?: throw java.io.IOException("Некорректный ответ HTTP proxy")
+                    if (status != 200) throw java.io.IOException("HTTP CONNECT отказал: $status")
+                }
+                else -> throw java.io.IOException("Для \${item.protocol} требуется встроенное sing-box ядро")
+            }
+            val tls = javax.net.ssl.SSLSocketFactory.getDefault().createSocket(tunnel, targetHost, targetPort, true) as javax.net.ssl.SSLSocket
+            tls.soTimeout = 5500
+            val parameters = tls.sslParameters
+            parameters.endpointIdentificationAlgorithm = "HTTPS"
+            tls.sslParameters = parameters
+            tls.startHandshake()
+            tls.getOutputStream().write("GET /generate_204 HTTP/1.1\r\nHost: $targetHost\r\nConnection: close\r\nCache-Control: no-cache\r\nUser-Agent: HAPP-Proxy-Finder/2.0\r\n\r\n".toByteArray(Charsets.US_ASCII))
+            tls.getOutputStream().flush()
+            val statusLine = tls.getInputStream().bufferedReader(Charsets.US_ASCII).readLine().orEmpty()
+            tls.close()
+            return Regex("^HTTP/1\\.[01] 204(?:\\s|$)").containsMatchIn(statusLine).let { if (it) 204 else Regex("^HTTP/1\\.[01] ([0-9]{3})").find(statusLine)?.groupValues?.get(1)?.toIntOrNull() ?: throw java.io.IOException("Некорректный ответ целевого сервера") }
+        } finally {
+            runCatching { tunnel.close() }
+            if (tunnel !== socket) runCatching { socket.close() }
+        }
+    }
+
+    private fun readHttpHeaders(input: java.io.InputStream): String {
+        val out = java.io.ByteArrayOutputStream()
+        var matched = 0
+        while (out.size() < 16_384) {
+            val value = input.read()
+            if (value < 0) break
+            out.write(value)
+            matched = when {
+                matched == 0 && value == 13 -> 1
+                matched == 1 && value == 10 -> 2
+                matched == 2 && value == 13 -> 3
+                matched == 3 && value == 10 -> 4
+                value == 13 -> 1
+                else -> 0
+            }
+            if (matched == 4) return out.toString(Charsets.US_ASCII.name())
+        }
+        throw java.io.IOException("HTTP proxy не вернул полные заголовки")
+    }
+
     suspend fun checkBatch(items: List<ProxyItem>, onResult: suspend (ProxyItem) -> Unit): List<ProxyItem> = coroutineScope {
-        val gate = Semaphore(12)
+        val gate = Semaphore(8)
         items.map { item -> async {
             gate.withPermit { check(item).also { onResult(it) } }
         } }.awaitAll()
@@ -816,6 +899,7 @@ data class ProxyItem(
     val isTunnelVerified: Boolean get() = checkStatus.startsWith("Проверен через generate_204")
 
     val isChecked: Boolean get() = checkedAt != null
+    val supportsNativeTunnelCheck: Boolean get() = protocol.uppercase(Locale.ROOT) in setOf("SOCKS4", "SOCKS5", "HTTP", "HTTPS")
     /** Only a successful end-to-end HTTP 204 proxy tunnel may be exported to HAPP. */
     val isExportReady: Boolean get() = isTunnelVerified && rawConfig.isNotBlank()
 
