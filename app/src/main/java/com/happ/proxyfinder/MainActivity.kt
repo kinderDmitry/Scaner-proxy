@@ -220,7 +220,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var targetPorts by remember { mutableStateOf("1080, 3128, 8080, 8081, 8888, 9050") }
     var localResults by remember { mutableStateOf(emptyList<OpenEndpoint>()) }
     var errorMessage by remember { mutableStateOf("") }
-    var autoRefresh by remember { mutableStateOf(true) }
+    var autoRefresh by remember { mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("auto_refresh_enabled", false)) }
     var autoCheckRunning by remember { mutableStateOf(false) }
     var refreshCounter by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -229,10 +229,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     LaunchedEffect(Unit) {
         var cursor = 0
         while (true) {
-            delay(1000)
-            refreshCounter = (refreshCounter + 1) % 60
+            delay(15_000)
             if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
-                val candidates = allItems.filter { it.isChecked }.ifEmpty { allItems.take(48) }
+                val candidates = allItems.asSequence().filter { it.isChecked }.take(48).toList().ifEmpty { allItems.take(48) }
                 val candidate = candidates[cursor % candidates.size]
                 cursor = (cursor + 1) % candidates.size
                 autoCheckRunning = true
@@ -290,13 +289,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         sourceProgress = "Подготовка"
         scope.launch {
             try {
-                val fetched = repo.fetch { name ->
+                val fetched = repo.fetch(scanFilter) { name ->
                     withContext(Dispatchers.Main) { sourceProgress = name }
                 }
                 val matchesFilter: (ProxyItem) -> Boolean = { item ->
                     scanFilter == "Все типы" || item.protocol.equals(scanFilter, ignoreCase = true)
                 }
-                val matchedItems = fetched.items.filter(matchesFilter)
+                val matchedItems = fetched.items
                 val previousByConfig = allItems.associateBy { it.rawConfig.trim() }
                 val merged = (allItems + fetched.items).distinctBy { it.rawConfig.trim() }
                     .map { fresh ->
@@ -341,9 +340,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     sourceStatus = "Сканирование завершено"
                     sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые прокси: ${allItems.count { it.isTunnelVerified }}"
-                    if (allItems.any { it.country.isBlank() }) {
+                    if (allItems.any { it.country.isBlank() } && scanFilter == "Все типы") {
                         geoLoading = true
-                        val countryItems = repo.resolveCountries(allItems) { resolved ->
+                        val countryItems = repo.resolveCountries(allItems.take(48).filter { it.country.isBlank() }) { resolved ->
                             withContext(Dispatchers.Main) {
                                 allItems = allItems.map {
                                 if (it.host == resolved.host) it.copy(country = resolved.country, countryCode = resolved.countryCode) else it
@@ -555,7 +554,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Автообновление · 1 сек", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(if (autoRefresh) "Проверяется следующий узел по очереди" else "Автопроверка приостановлена", color = TextMuted, fontSize = 10.sp)
                     }
-                    Switch(checked = autoRefresh, onCheckedChange = { autoRefresh = it },
+                    Switch(checked = autoRefresh, onCheckedChange = {
+                        autoRefresh = it
+                        context.getSharedPreferences("proxy_finder", 0).edit().putBoolean("auto_refresh_enabled", it).apply()
+                    },
                         colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
                 }
             }
