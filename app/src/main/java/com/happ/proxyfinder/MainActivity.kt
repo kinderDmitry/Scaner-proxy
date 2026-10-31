@@ -254,7 +254,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         while (true) {
             delay(15_000)
             if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
-                val candidates = allItems.asSequence().filter { it.supportsNativeTunnelCheck && !it.isTunnelVerified }.take(48).toList().ifEmpty { allItems.take(48) }
+                val candidates = allItems.asSequence().filter { it.needsNativeTunnelCheck }.take(48).toList().ifEmpty { allItems.filter { it.isTunnelVerified }.take(48) }
                 val candidate = candidates[cursor % candidates.size]
                 cursor = (cursor + 1) % candidates.size
                 autoCheckRunning = true
