@@ -470,6 +470,12 @@ class ProxyRepository(private val context: Context) {
         return store.readLatest(limit)
     }
 
+    /** Full verified-only export query; unverified rows never enter the export flow. */
+    fun loadVerifiedSnapshot(): List<ProxyItem> {
+        migrateLegacySnapshot()
+        return store.readVerified()
+    }
+
     private fun migrateLegacySnapshot() {
         if (store.count() > 0) return
         val legacy = runCatching {
@@ -552,10 +558,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
         }
     }
 
-    fun readLatest(limit: Int): List<ProxyItem> = readableDatabase.rawQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results ORDER BY rowid DESC LIMIT ?",
-        arrayOf(limit.coerceIn(1, 5000).toString())
-    ).use { cursor ->
+    private fun readQuery(sql: String, args: Array<String>? = null): List<ProxyItem> = readableDatabase.rawQuery(sql, args).use { cursor ->
         buildList {
             while (cursor.moveToNext()) {
                 fun string(name: String) = cursor.getString(cursor.getColumnIndexOrThrow(name)) ?: ""
@@ -575,6 +578,15 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
             }
         }
     }
+
+    fun readLatest(limit: Int): List<ProxyItem> = readQuery(
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results ORDER BY rowid DESC LIMIT ?",
+        arrayOf(limit.coerceIn(1, 5000).toString())
+    )
+
+    fun readVerified(): List<ProxyItem> = readQuery(
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results WHERE status LIKE 'Проверен через generate_204%' ORDER BY latency ASC, rowid DESC"
+    )
 }
 
 internal object ConfigParser {
