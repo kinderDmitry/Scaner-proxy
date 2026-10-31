@@ -775,7 +775,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     )
 
     fun readVerified(): List<ProxyItem> = readQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results WHERE status LIKE 'Проверен через generate_204%' ORDER BY latency ASC, rowid DESC"
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
     )
 }
 
@@ -1003,7 +1003,7 @@ data class ProxyItem(
         checkStatus.startsWith("TCP доступен") || isTunnelVerified
 
     /** A real HTTP 204 round-trip through HTTP/SOCKS; raw TCP checks do not qualify. */
-    val isTunnelVerified: Boolean get() = checkStatus.startsWith("Проверен через generate_204")
+    val isTunnelVerified: Boolean get() = checkStatus.startsWith("Проверен через generate_204") || checkStatus.startsWith("Проверен через HTTPS-туннель")
 
     val isChecked: Boolean get() = checkedAt != null
     val supportsNativeTunnelCheck: Boolean get() = protocol.uppercase(Locale.ROOT) in setOf("SOCKS4", "SOCKS5", "HTTP", "HTTPS")
