@@ -198,7 +198,7 @@ private fun namedConfigForImport(item: ProxyItem): String {
 
 @Composable
 private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
-    var allItems by remember { mutableStateOf(repo.loadSnapshot()) }
+    var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
     var geoLoading by remember { mutableStateOf(false) }
@@ -226,6 +226,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
+    LaunchedEffect(repo) {
+        val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(1000) }
+        allItems = restored
+        sourceStatus = if (restored.isEmpty()) "Готов к сканированию" else "Загружено ${restored.size} последних узлов · база сохранена"
+    }
+
     LaunchedEffect(Unit) {
         var cursor = 0
         while (true) {
@@ -240,8 +246,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         val checked = repo.check(candidate)
                         val latest = allItems.map { if (it.id == checked.id) checked.copy(favorite = it.favorite) else it }
                         allItems = latest
-                        repo.saveSnapshot(latest)
-                        repo.saveFavorites(latest.filter { it.favorite }.map { it.id }.toSet())
+                        withContext(Dispatchers.IO) {
+                            repo.saveSnapshot(listOf(checked.copy(favorite = candidate.favorite)))
+                            repo.saveFavorites(latest.filter { it.favorite }.map { it.id }.toSet())
+                        }
                     } catch (_: Exception) {
                         // A transient probe failure must not clear previously saved results.
                     } finally {
@@ -254,8 +262,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun persist(items: List<ProxyItem>) {
         allItems = items
-        repo.saveSnapshot(items)
-        repo.saveFavorites(items.filter { it.favorite }.map { it.id }.toSet())
+        val favorites = items.filter { it.favorite }.map { it.id }.toSet()
+        scope.launch(Dispatchers.IO) {
+            repo.saveSnapshot(items)
+            repo.saveFavorites(favorites)
+        }
     }
 
     fun scan() {
@@ -293,22 +304,21 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 val fetched = repo.fetch(scanFilter) { name ->
                     withContext(Dispatchers.Main) { sourceProgress = name }
                 }
-                val matchesFilter: (ProxyItem) -> Boolean = { item ->
-                    scanFilter == "Все типы" || item.protocol.equals(scanFilter, ignoreCase = true)
-                }
                 val matchedItems = fetched.items
                 val previousByConfig = allItems.associateBy { it.rawConfig.trim() }
-                val merged = (allItems + fetched.items).distinctBy { it.rawConfig.trim() }
-                    .map { fresh ->
-                        previousByConfig[fresh.rawConfig.trim()]?.let { previous ->
-                            fresh.copy(
-                                checkStatus = previous.checkStatus,
-                                latencyMs = previous.latencyMs,
-                                checkedAt = previous.checkedAt,
-                                favorite = previous.favorite || fresh.favorite
-                            )
-                        } ?: fresh
-                    }
+                val merged = withContext(Dispatchers.Default) {
+                    (allItems + fetched.items).distinctBy { it.rawConfig.trim() }
+                        .map { fresh ->
+                            previousByConfig[fresh.rawConfig.trim()]?.let { previous ->
+                                fresh.copy(
+                                    checkStatus = previous.checkStatus,
+                                    latencyMs = previous.latencyMs,
+                                    checkedAt = previous.checkedAt,
+                                    favorite = previous.favorite || fresh.favorite
+                                )
+                            } ?: fresh
+                        }
+                }
                 persist(merged)
                 sourceStatus = "Получено по фильтру «$scanFilter»: ${matchedItems.size} · всего в базе: ${merged.size}"
                 sourceProgress = buildString {
@@ -365,14 +375,14 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     }
 
     val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
-    val countries = listOf("Все страны") + allItems.map { it.country }.filter { it.isNotBlank() }.distinct().sorted()
-    val visible = allItems.filter { item ->
+    val countries = remember(allItems) { listOf("Все страны") + allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
+    val visible = remember(allItems, query, selectedProtocol, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
         val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country}"
         (query.isBlank() || haystack.contains(query, true)) &&
             (selectedProtocol == "Все протоколы" || item.protocol.equals(selectedProtocol, true)) &&
             (selectedCountry == "Все страны" || item.country == selectedCountry) &&
             (!onlyAvailable || item.isTcpReachable) && (!onlyFavorites || item.favorite)
-    }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host })
+    }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
 
     Column(Modifier.fillMaxSize().background(Bg)) {
         LazyColumn(
