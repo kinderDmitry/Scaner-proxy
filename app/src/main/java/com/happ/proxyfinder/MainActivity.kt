@@ -260,6 +260,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun scan() {
         if (loading) return
+        selectedProtocol = if (scanFilter == "Все типы") "Все протоколы" else scanFilter
         loading = true
         errorMessage = ""
         if (scanScope == "Диапазон IP") {
