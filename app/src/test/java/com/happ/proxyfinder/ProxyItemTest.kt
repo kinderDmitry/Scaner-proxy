@@ -124,6 +124,14 @@ class ProxyItemTest {
     }
 
     @Test
+    fun successfulFallbackHttps204IsVerifiedAndScored() {
+        val proxy = item("Проверен через HTTPS-туннель · HTTP 204", 85)
+        assertTrue(proxy.isTunnelVerified)
+        assertTrue(proxy.isExportReady)
+        assertEquals(90, proxy.qualityScore)
+    }
+
+    @Test
     fun successfulGenerate204IsVerifiedAndScored() {
         val proxy = item("Проверен через generate_204 · HTTP 204", 85)
 
