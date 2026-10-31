@@ -98,6 +98,15 @@ class ProxyItemTest {
     }
 
     @Test
+    fun nativeTunnelCheckCapabilityIsExplicit() {
+        assertTrue(item("Не проверен", null).supportsNativeTunnelCheck)
+        val vless = ProxyItem("v", "example.com", 443, "VLESS", "test", "vless://id@example.com:443")
+        val ss = ProxyItem("s", "example.com", 443, "Shadowsocks", "test", "ss://encoded")
+        assertFalse(vless.supportsNativeTunnelCheck)
+        assertFalse(ss.supportsNativeTunnelCheck)
+    }
+
+    @Test
     fun onlySuccessfulTunnelProbeIsEligibleForHappExport() {
         val verified = item("Проверен через generate_204 · HTTP 204", 85)
         val tcpOnly = item("TCP доступен · скорость туннеля не измерена: нужен core VLESS", 24)
