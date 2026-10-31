@@ -804,6 +804,8 @@ data class ProxyItem(
     val isTunnelVerified: Boolean get() = checkStatus.startsWith("Проверен через generate_204")
 
     val isChecked: Boolean get() = checkedAt != null
+    /** Only a successful end-to-end HTTP 204 proxy tunnel may be exported to HAPP. */
+    val isExportReady: Boolean get() = isTunnelVerified && rawConfig.isNotBlank()
 
     /** Quality is meaningful only when the proxy actually completed the generate_204 request. */
     val qualityScore: Int get() {
