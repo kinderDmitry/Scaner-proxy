@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
@@ -20,6 +21,7 @@ import java.util.UUID
 class SubscriptionServerService : Service() {
     private var server: SubscriptionHttpServer? = null
     private lateinit var repository: ProxyRepository
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -40,6 +42,10 @@ class SubscriptionServerService : Service() {
         }
 
         startForeground(NOTIFICATION_ID, notification("Сервер подписки запускается"))
+        if (wakeLock?.isHeld != true) {
+            wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ProxyFinder:SubscriptionServer").apply { acquire() }
+        }
         try {
             if (server == null) {
                 val httpServer = SubscriptionHttpServer(repository) {
@@ -67,6 +73,8 @@ class SubscriptionServerService : Service() {
     private fun stopServer() {
         runCatching { server?.stop() }
         server = null
+        runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+        wakeLock = null
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, false).apply()
     }
 
