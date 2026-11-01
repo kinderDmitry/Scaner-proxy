@@ -18,6 +18,13 @@ import java.util.Collections
 import java.util.UUID
 
 /** Serves a live HAPP subscription containing only genuinely verified proxy tunnels. */
+private fun subscriptionCountryFlag(code: String): String {
+    if (code.length != 2 || !code.all { it in 'A'..'Z' || it in 'a'..'z' }) return "🌐"
+    val upper = code.uppercase(java.util.Locale.ROOT)
+    return String(Character.toChars(0x1F1E6 + (upper[0] - 'A'))) +
+        String(Character.toChars(0x1F1E6 + (upper[1] - 'A')))
+}
+
 class SubscriptionServerService : Service() {
     private var server: SubscriptionHttpServer? = null
     private lateinit var repository: ProxyRepository
@@ -122,7 +129,7 @@ class SubscriptionServerService : Service() {
                     val body = verified.joinToString("\n") { item ->
                         val location = listOf(item.city, item.country).filter { it.isNotBlank() }.joinToString(", ")
                         val name = when {
-                            location.isNotBlank() && item.countryCode.length == 2 -> countryFlag(item.countryCode) + " " + location
+                            location.isNotBlank() && item.countryCode.length == 2 -> subscriptionCountryFlag(item.countryCode) + " " + location
                             location.isNotBlank() -> location
                             else -> item.title.ifBlank { item.protocol }
                         }.take(48)
