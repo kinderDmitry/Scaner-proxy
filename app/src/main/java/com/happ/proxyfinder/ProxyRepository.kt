@@ -522,7 +522,8 @@ class ProxyRepository(private val context: Context) {
                         val country = json.optString("country_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
                         val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }
                             ?.uppercase(Locale.ROOT).orEmpty()
-                        if (country.isNotBlank()) country to code else null
+                        val city = json.optString("city").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                        if (country.isNotBlank()) Triple(country, code, city) else null
                     }.getOrNull()
                     if (foundCountry != null) {
                         updated[item.host] = foundCountry
