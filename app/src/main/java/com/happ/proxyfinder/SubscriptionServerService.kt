@@ -120,7 +120,12 @@ class SubscriptionServerService : Service() {
                         .take(1500)
                         .toList()
                     val body = verified.joinToString("\n") { item ->
-                        val name = item.title.ifBlank { item.protocol }.take(30)
+                        val location = listOf(item.city, item.country).filter { it.isNotBlank() }.joinToString(", ")
+                        val name = when {
+                            location.isNotBlank() && item.countryCode.length == 2 -> countryFlag(item.countryCode) + " " + location
+                            location.isNotBlank() -> location
+                            else -> item.title.ifBlank { item.protocol }
+                        }.take(48)
                         item.rawConfig.trim().substringBefore('#') + "#" +
                             java.net.URLEncoder.encode(name, Charsets.UTF_8.name())
                     }
