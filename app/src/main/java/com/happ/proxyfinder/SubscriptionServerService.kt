@@ -12,7 +12,7 @@ import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
 import java.net.Inet4Address
 import java.net.NetworkInterface
-import java.util.Collections
+import java.util.Collections\nimport java.util.UUID
 
 /**
  * Hosts a live HAPP-compatible subscription from the verified local database.
@@ -24,7 +24,7 @@ class SubscriptionServerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        repository = ProxyRepository(applicationContext)
+        repository = ProxyRepository(applicationContext)\n        serverTokenProvider = { getSharedPreferences(PREFS, MODE_PRIVATE).getString("local_subscription_token", "").orEmpty() }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(CHANNEL, "Локальный сервер подписки", NotificationManager.IMPORTANCE_LOW)
@@ -80,7 +80,7 @@ class SubscriptionServerService : Service() {
             .setOnlyAlertOnce(true)
             .build()
 
-    private class SubscriptionHttpServer(private val repository: ProxyRepository) : NanoHTTPD(PORT) {
+    private class SubscriptionHttpServer(private val repository: ProxyRepository) : NanoHTTPD(PORT) {\n        private fun repositoryToken(): String = repositoryServerToken(repository)
         override fun serve(session: IHTTPSession): Response {
             if (session.method != Method.GET && session.method != Method.HEAD) {
                 return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, MIME_PLAINTEXT, "GET only")
@@ -130,6 +130,6 @@ class SubscriptionServerService : Service() {
                 .firstOrNull { it != "127.0.0.1" && !it.startsWith("169.254.") }
         } catch (_: Exception) { null }
 
-        fun subscriptionUrl(): String? = localIpv4Address()?.let { "http://$it:$PORT/sub" }
+        fun subscriptionUrl(context: android.content.Context): String? {\n            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)\n            var token = prefs.getString("local_subscription_token", null)\n            if (token.isNullOrBlank()) {\n                token = UUID.randomUUID().toString().replace("-", "")\n                prefs.edit().putString("local_subscription_token", token).apply()\n            }\n            return localIpv4Address()?.let { "http://$it:$PORT/sub?token=$token" }\n        }\n\n        private fun repositoryServerToken(repository: ProxyRepository): String {\n            // The token is read from the same private preferences used by the server service.\n            return serverTokenProvider?.invoke() ?: ""\n        }\n        @Volatile private var serverTokenProvider: (() -> String)? = null
     }
 }
