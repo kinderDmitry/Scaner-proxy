@@ -491,7 +491,7 @@ class ProxyRepository(private val context: Context) {
             }
         }.getOrDefault(emptyMap())
         val candidates = items.filter {
-            it.country.isBlank() && (isIpv4(it.host) || isResolvableHostname(it.host)) && !cached.containsKey(it.host)
+            it.city.isBlank() && (isIpv4(it.host) || isResolvableHostname(it.host)) && (!cached.containsKey(it.host) || cached[it.host]?.third.isNullOrBlank())
         }.distinctBy { it.host }.take(MAX_GEO_LOOKUPS)
         val updated = java.util.concurrent.ConcurrentHashMap<String, Triple<String, String, String>>()
         val gate = Semaphore(8)
@@ -538,10 +538,14 @@ class ProxyRepository(private val context: Context) {
         prefs.edit().putString("geo_cache", cacheJson.toString()).apply()
         val resolved = items.map { item ->
             val country = allGeo[item.host]
-            if (country == null || item.country.isNotBlank()) item else item.copy(country = country.first, countryCode = country.second, city = country.third)
+            if (country == null) item else item.copy(
+                country = item.country.ifBlank { country.first },
+                countryCode = item.countryCode.ifBlank { country.second },
+                city = item.city.ifBlank { country.third }
+            )
         }
         items.zip(resolved).forEach { (original, resolvedItem) ->
-            if (original.country.isBlank() && resolvedItem.country.isNotBlank()) onResolved(resolvedItem)
+            if (original.city.isBlank() && (resolvedItem.country.isNotBlank() || resolvedItem.city.isNotBlank())) onResolved(resolvedItem)
         }
         resolved
     }
@@ -780,7 +784,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     )
 
     fun readVerified(): List<ProxyItem> = readQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
     )
 }
 
