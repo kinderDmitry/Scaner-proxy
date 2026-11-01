@@ -192,11 +192,14 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun namedConfigForImport(item: ProxyItem): String {
-    val displayName = (if (item.country.isNotBlank() && item.countryCode.length == 2) {
-        countryFlag(item.countryCode) + " " + item.country
+    val location = listOf(item.city, item.country).filter { it.isNotBlank() }.joinToString(", ")
+    val displayName = (if (location.isNotBlank() && item.countryCode.length == 2) {
+        countryFlag(item.countryCode) + " " + location
+    } else if (location.isNotBlank()) {
+        location
     } else {
         item.title.ifBlank { item.protocol }
-    }).take(30)
+    }).take(48)
     val description = android.util.Base64.encodeToString(
         item.protocol.toByteArray(Charsets.UTF_8),
         android.util.Base64.NO_WRAP
@@ -449,7 +452,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         val countryItems = repo.resolveCountries(allItems.take(48).filter { it.country.isBlank() }) { resolved ->
                             withContext(Dispatchers.Main) {
                                 allItems = allItems.map {
-                                if (it.host == resolved.host) it.copy(country = resolved.country, countryCode = resolved.countryCode) else it
+                                if (it.host == resolved.host) it.copy(country = resolved.country, countryCode = resolved.countryCode, city = resolved.city) else it
                             }
                             }
                         }
