@@ -732,7 +732,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
             }
             item(key = "subscription") {
-                val localUrl = SubscriptionServerService.subscriptionUrl()
+                val localUrl = SubscriptionServerService.subscriptionUrl(context)
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
