@@ -482,24 +482,24 @@ class ProxyRepository(private val context: Context) {
     suspend fun resolveCountries(items: List<ProxyItem>, onResolved: suspend (ProxyItem) -> Unit): List<ProxyItem> = withContext(Dispatchers.IO) {
         val cached = runCatching {
             val json = JSONObject(prefs.getString("geo_cache", "{}"))
-            buildMap<String, Pair<String, String>> {
+            buildMap<String, Triple<String, String, String>> {
                 json.keys().forEach { host ->
                     val value = json.optJSONObject(host) ?: return@forEach
                     val country = value.optString("country")
-                    if (country.isNotBlank()) put(host, country to value.optString("code"))
+                    if (country.isNotBlank()) put(host, Triple(country, value.optString("code"), value.optString("city")))
                 }
             }
         }.getOrDefault(emptyMap())
         val candidates = items.filter {
             it.country.isBlank() && (isIpv4(it.host) || isResolvableHostname(it.host)) && !cached.containsKey(it.host)
         }.distinctBy { it.host }.take(MAX_GEO_LOOKUPS)
-        val updated = java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>()
+        val updated = java.util.concurrent.ConcurrentHashMap<String, Triple<String, String, String>>()
         val gate = Semaphore(8)
         coroutineScope {
             candidates.map { item -> async {
                 gate.withPermit {
                     val foundCountry = runCatching {
-                        val url = URL("https://ipwho.is/${item.host}?fields=success,country,country_code")
+                        val url = URL("https://ipwho.is/${item.host}?fields=success,country,country_code,city")
                         val conn = url.openConnection().apply {
                             connectTimeout = 1800; readTimeout = 1800
                             setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
@@ -509,7 +509,8 @@ class ProxyRepository(private val context: Context) {
                             val country = json.optString("country").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
                             val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }
                                 ?.uppercase(Locale.ROOT).orEmpty()
-                            if (country.isNotBlank()) country to code else null
+                            val city = json.optString("city").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                            if (country.isNotBlank()) Triple(country, code, city) else null
                         } else null
                     }.getOrNull() ?: runCatching {
                         // Secondary provider helps when the primary geo API rate-limits or rejects a host.
@@ -525,18 +526,18 @@ class ProxyRepository(private val context: Context) {
                     }.getOrNull()
                     if (foundCountry != null) {
                         updated[item.host] = foundCountry
-                        onResolved(item.copy(country = foundCountry.first, countryCode = foundCountry.second))
+                        onResolved(item.copy(country = foundCountry.first, countryCode = foundCountry.second, city = foundCountry.third))
                     }
                 }
             } }.awaitAll()
         }
         val allGeo = cached + updated
         val cacheJson = JSONObject()
-        allGeo.forEach { (host, value) -> cacheJson.put(host, JSONObject().put("country", value.first).put("code", value.second)) }
+        allGeo.forEach { (host, value) -> cacheJson.put(host, JSONObject().put("country", value.first).put("code", value.second).put("city", value.third)) }
         prefs.edit().putString("geo_cache", cacheJson.toString()).apply()
         val resolved = items.map { item ->
             val country = allGeo[item.host]
-            if (country == null || item.country.isNotBlank()) item else item.copy(country = country.first, countryCode = country.second)
+            if (country == null || item.country.isNotBlank()) item else item.copy(country = country.first, countryCode = country.second, city = country.third)
         }
         items.zip(resolved).forEach { (original, resolvedItem) ->
             if (original.country.isBlank() && resolvedItem.country.isNotBlank()) onResolved(resolvedItem)
@@ -677,7 +678,7 @@ class ProxyRepository(private val context: Context) {
                     source = o.getString("source"), rawConfig = o.getString("rawConfig"), checkStatus = o.optString("status", "Не проверен"),
                     latencyMs = o.optInt("latency", -1).takeIf { it >= 0 }, favorite = o.optBoolean("favorite"),
                     checkedAt = o.optLong("checked").takeIf { it > 0 }, title = o.optString("title"),
-                    country = o.optString("country"), countryCode = o.optString("countryCode")
+                    country = o.optString("country"), countryCode = o.optString("countryCode"), city = o.optString("city")
                 )
             }
         }.getOrDefault(emptyList())
@@ -697,7 +698,7 @@ class ProxyRepository(private val context: Context) {
 
 
 /** Unbounded-by-arbitrary-row-count local result store. SQLite persists incrementally and deduplicates by raw config. */
-private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_results.db", null, 1) {
+private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_results.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE proxy_results (
@@ -713,14 +714,17 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
                 checked_at INTEGER,
                 title TEXT NOT NULL,
                 country TEXT NOT NULL,
-                country_code TEXT NOT NULL
+                country_code TEXT NOT NULL,
+                city TEXT NOT NULL DEFAULT ''
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX idx_proxy_protocol ON proxy_results(protocol)")
         db.execSQL("CREATE INDEX idx_proxy_host ON proxy_results(host)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("ALTER TABLE proxy_results ADD COLUMN city TEXT NOT NULL DEFAULT ''")
+    }
 
     fun count(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM proxy_results", null).use {
         if (it.moveToFirst()) it.getInt(0) else 0
@@ -738,7 +742,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
                     if (item.latencyMs == null) putNull("latency") else put("latency", item.latencyMs)
                     put("favorite", if (item.favorite) 1 else 0)
                     if (item.checkedAt == null) putNull("checked_at") else put("checked_at", item.checkedAt)
-                    put("title", item.title); put("country", item.country); put("country_code", item.countryCode)
+                    put("title", item.title); put("country", item.country); put("country_code", item.countryCode); put("city", item.city)
                 }
                 db.insertWithOnConflict("proxy_results", null, values, SQLiteDatabase.CONFLICT_REPLACE)
             }
@@ -763,14 +767,14 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
                     checkStatus = string("status"), latencyMs = latency,
                     favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
                     checkedAt = nullableLong("checked_at"), title = string("title"),
-                    country = string("country"), countryCode = string("country_code")
+                    country = string("country"), countryCode = string("country_code"), city = string("city")
                 ))
             }
         }
     }
 
     fun readLatest(limit: Int): List<ProxyItem> = readQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code FROM proxy_results ORDER BY rowid DESC LIMIT ?",
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results ORDER BY rowid DESC LIMIT ?",
         arrayOf(limit.coerceIn(1, 5000).toString())
     )
 
@@ -996,7 +1000,8 @@ data class ProxyItem(
     val checkedAt: Long? = null,
     val title: String = "",
     val country: String = "",
-    val countryCode: String = ""
+    val countryCode: String = "",
+    val city: String = ""
 ) {
     /** True only when the endpoint passed the protocol-aware probe or its TCP port answered. */
     val isTcpReachable: Boolean get() =
