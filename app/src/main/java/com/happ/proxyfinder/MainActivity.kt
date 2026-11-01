@@ -447,7 +447,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     sourceStatus = "Сканирование завершено"
                     sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
-                    if (allItems.any { it.country.isBlank() } && scanFilter == "Все типы") {
+                    if (allItems.any { it.city.isBlank() } && scanFilter == "Все типы") {
                         geoLoading = true
                         val countryItems = repo.resolveCountries(allItems.take(48).filter { it.country.isBlank() }) { resolved ->
                             withContext(Dispatchers.Main) {
