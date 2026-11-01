@@ -211,7 +211,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var verifiedExportItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var workerUrl by remember { mutableStateOf(repo.loadSubscriptionWorkerUrl()) }
     var publishToken by remember { mutableStateOf(repo.loadSubscriptionToken()) }
-    var subscriptionUrl by remember { mutableStateOf(repo.loadSubscriptionUrl()) }\n    var localServerEnabled by remember { mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean(SubscriptionServerService.KEY_RUNNING, false)) }
+    var subscriptionUrl by remember { mutableStateOf(repo.loadSubscriptionUrl()) }
+
     var publishingSubscription by remember { mutableStateOf(false) }
     var displayLimit by remember { mutableIntStateOf(100) }
     var loading by remember { mutableStateOf(false) }
@@ -226,6 +227,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    var localServerEnabled by remember { mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean(SubscriptionServerService.KEY_RUNNING, false)) }
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
