@@ -211,7 +211,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var verifiedExportItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var workerUrl by remember { mutableStateOf(repo.loadSubscriptionWorkerUrl()) }
     var publishToken by remember { mutableStateOf(repo.loadSubscriptionToken()) }
-    var subscriptionUrl by remember { mutableStateOf(repo.loadSubscriptionUrl()) }
+    var subscriptionUrl by remember { mutableStateOf(repo.loadSubscriptionUrl()) }\n    var localServerEnabled by remember { mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean(SubscriptionServerService.KEY_RUNNING, false)) }
     var publishingSubscription by remember { mutableStateOf(false) }
     var displayLimit by remember { mutableIntStateOf(100) }
     var loading by remember { mutableStateOf(false) }
@@ -732,24 +732,42 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
             }
             item(key = "subscription") {
+                val localUrl = SubscriptionServerService.subscriptionUrl()
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("ОНЛАЙН-ПОДПИСКА ДЛЯ HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Создаёт постоянную HTTPS-ссылку на подтверждённые узлы. После каждого завершённого пакета проверок приложение автоматически обновляет содержимое этой же ссылки.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
-                    OutlinedTextField(value = workerUrl, onValueChange = { workerUrl = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Адрес Cloudflare Worker") }, placeholder = { Text("https://имя.workers.dev") }, enabled = !publishingSubscription)
-                    OutlinedTextField(value = publishToken, onValueChange = { publishToken = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Токен публикации") }, visualTransformation = PasswordVisualTransformation(), enabled = !publishingSubscription)
-                    Button(onClick = { publishVerifiedSubscription() }, enabled = !publishingSubscription && verifiedExportItems.any { it.isExportReady } && workerUrl.startsWith("https://") && publishToken.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))) {
-                        if (publishingSubscription) CircularProgressIndicator(Modifier.size(17.dp), color = Color(0xFF03101A), strokeWidth = 2.dp) else Icon(Icons.Default.CloudUpload, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (publishingSubscription) "Публикуем…" else "Создать / обновить ссылку", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    if (subscriptionUrl.isNotBlank()) {
-                        Text("ТВОЯ ССЫЛКА ПОДПИСКИ", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        Text(subscriptionUrl, color = TextPrimary, fontSize = 11.sp, lineHeight = 15.sp)
-                        OutlinedButton(onClick = { onCopy(subscriptionUrl) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
-                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Копировать ссылку для HAPP")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("ВСТРОЕННЫЙ СЕРВЕР HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Телефон сам раздаёт подписку. Каждый запрос получает только актуальные конфиги с подтверждённым HTTPS-туннелем.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
                         }
+                        Switch(
+                            checked = localServerEnabled,
+                            onCheckedChange = { enabled ->
+                                localServerEnabled = enabled
+                                context.getSharedPreferences("proxy_finder", 0).edit()
+                                    .putBoolean(SubscriptionServerService.KEY_RUNNING, enabled).apply()
+                                val serverIntent = Intent(context, SubscriptionServerService::class.java).apply {
+                                    action = if (enabled) SubscriptionServerService.ACTION_START else SubscriptionServerService.ACTION_STOP
+                                }
+                                if (enabled) androidx.core.content.ContextCompat.startForegroundService(context, serverIntent)
+                                else context.startService(serverIntent)
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f))
+                        )
                     }
-                    Text("Нужен один раз развёрнутый Cloudflare Worker. Инструкция находится в папке subscription-worker репозитория. Ссылка приватная: любой, у кого она есть, сможет прочитать список.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                    Text(if (localServerEnabled) "Сервер включён · порт 8765" else "Сервер выключен", color = if (localServerEnabled) Green else TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (localServerEnabled && localUrl != null) {
+                        Text("ССЫЛКА ДЛЯ HAPP В ЭТОЙ WI-FI СЕТИ", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text(localUrl, color = TextPrimary, fontSize = 11.sp)
+                        OutlinedButton(onClick = { onCopy(localUrl) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text("Копировать ссылку подписки")
+                        }
+                    } else if (localServerEnabled) {
+                        Text("Не удалось определить IP-адрес Wi-Fi. Проверь подключение к сети.", color = Amber, fontSize = 10.sp)
+                    }
+                    Text("Важно: эта ссылка работает в одной локальной сети Wi-Fi. Для доступа к телефону через интернет из другой сети понадобится внешний защищённый туннель или публичный relay. Android должен оставаться включённым, а сервер — работать в уведомлениях.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                    Text("Рабочих конфигураций в подписке: ${verifiedExportItems.count { it.isExportReady }} · неподтверждённые узлы не публикуются.", color = TextMuted, fontSize = 10.sp)
                 }
             }
             item(key = "bulkImport") {
