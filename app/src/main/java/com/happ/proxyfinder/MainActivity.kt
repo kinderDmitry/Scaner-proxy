@@ -449,7 +449,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
                     if (allItems.any { it.city.isBlank() } && scanFilter == "Все типы") {
                         geoLoading = true
-                        val countryItems = repo.resolveCountries(allItems.take(48).filter { it.country.isBlank() }) { resolved ->
+                        val countryItems = repo.resolveCountries(allItems.take(48).filter { it.city.isBlank() }) { resolved ->
                             withContext(Dispatchers.Main) {
                                 allItems = allItems.map {
                                 if (it.host == resolved.host) it.copy(country = resolved.country, countryCode = resolved.countryCode, city = resolved.city) else it
