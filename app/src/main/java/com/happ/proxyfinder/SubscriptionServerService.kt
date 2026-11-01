@@ -42,7 +42,7 @@ class SubscriptionServerService : Service() {
         startForeground(NOTIFICATION_ID, notification("Сервер подписки запускается"))
         try {
             if (server == null) {
-                val httpServer = SubscriptionHttpServer(repository)
+                val httpServer = SubscriptionHttpServer(repository) { getSharedPreferences(PREFS, MODE_PRIVATE).getString("local_subscription_token", "").orEmpty() }
                 httpServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                 server = httpServer
             }
