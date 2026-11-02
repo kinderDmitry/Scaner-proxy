@@ -37,6 +37,10 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // Cloudflared is packaged as an executable native library so Android extracts it to nativeLibraryDir.
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
