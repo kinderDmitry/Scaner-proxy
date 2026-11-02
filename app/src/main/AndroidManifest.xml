@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <application
+        android:extractNativeLibs="true"
         android:allowBackup="false"
         android:label="HAPP Proxy Finder"
         android:icon="@mipmap/ic_launcher"
