@@ -64,7 +64,7 @@ class SubscriptionServerService : Service() {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
             val address = localIpv4Address()
             val status = if (address == null) "Сервер работает · IP сети не определён"
-                else "Подписка доступна: http://$address:$PORT/sub"
+                else "Подписка доступна на этом телефоне: http://127.0.0.1:$PORT/sub"
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(status))
         } catch (error: Exception) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, false).apply()
@@ -177,7 +177,7 @@ class SubscriptionServerService : Service() {
                 token = UUID.randomUUID().toString().replace("-", "")
                 prefs.edit().putString(KEY_TOKEN, token).apply()
             }
-            return localIpv4Address()?.let { "http://$it:$PORT/sub?token=$token" }
+            return "http://127.0.0.1:$PORT/sub?token=$token"
         }
     }
 }
