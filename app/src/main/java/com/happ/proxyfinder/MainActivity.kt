@@ -907,6 +907,120 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 }
 
 @Composable
+private fun ServerSettingsPanel(
+    serverEnabled: Boolean,
+    internetEnabled: Boolean,
+    tunnelUrl: String,
+    tunnelStatus: String,
+    localUrl: String,
+    lanUrl: String?,
+    verifiedCount: Int,
+    onServerChange: (Boolean) -> Unit,
+    onInternetChange: (Boolean) -> Unit,
+    onCopy: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF102C48), Color(0xFF101827), Color(0xFF101827))))
+                .padding(17.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CloudUpload, null, tint = Blue, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(9.dp))
+                Text("СЕРВЕР ПОДПИСКИ", color = TextPrimary, fontWeight = FontWeight.Black, fontSize = 15.sp, letterSpacing = 0.8.sp)
+                Spacer(Modifier.weight(1f))
+                Tag(if (serverEnabled) "РАБОТАЕТ" else "ВЫКЛЮЧЕН", if (serverEnabled) Color(0xFF123B30) else SurfaceRaised, if (serverEnabled) Green else TextMuted)
+            }
+            Text("Телефон сам хранит базу и отдаёт HAPP-подписку. Сами конфигурации не загружаются на внешний сервер.", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 16.sp)
+        }
+
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Локальный сервер", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("HTTP · порт 8765 · этот телефон и локальная сеть", color = TextMuted, fontSize = 10.sp)
+                }
+                Switch(checked = serverEnabled, onCheckedChange = onServerChange,
+                    colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
+            }
+            if (serverEnabled) {
+                ServerAddressLine("HAPP на этом телефоне", localUrl, onCopy)
+                if (lanUrl != null) ServerAddressLine("Другие устройства в этой Wi-Fi сети", lanUrl, onCopy)
+                Text("Адрес 127.0.0.1 работает только между приложениями на этом телефоне. LAN-адрес доступен лишь внутри текущей сети.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+            }
+        }
+
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                .background(Brush.horizontalGradient(listOf(Color(0xFF102A42), Surface)))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Доступ из всего интернета", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Cloudflare Tunnel · публичный HTTPS-адрес", color = TextMuted, fontSize = 10.sp)
+                }
+                Switch(checked = internetEnabled, onCheckedChange = onInternetChange,
+                    colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
+            }
+            Text("Создаёт исходящее защищённое соединение. Не требуется открывать порт на роутере, иметь белый IP или быть в той же Wi-Fi сети.", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 16.sp)
+            Text(
+                if (internetEnabled) tunnelStatus else "Выключено. Включи переключатель для создания публичного адреса.",
+                color = if (internetEnabled && tunnelUrl.isNotBlank()) Green else if (internetEnabled) Amber else TextMuted,
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold
+            )
+            if (tunnelUrl.isNotBlank()) {
+                ServerAddressLine("ПУБЛИЧНАЯ ССЫЛКА ДЛЯ HAPP", tunnelUrl, onCopy)
+                Text("Ссылка доступна извне, пока включены сервер и туннель. Не публикуй её открыто: секретный токен находится в адресе.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+            } else if (internetEnabled) {
+                Text("Подключаемся к Cloudflare. Публичная ссылка появится здесь автоматически.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+            }
+            Text("Сейчас используется временный Quick Tunnel без аккаунта Cloudflare. Адрес меняется при новом запуске. Для постоянного домена понадобится отдельная настройка именованного туннеля и своего домена.", color = Amber, fontSize = 10.sp, lineHeight = 15.sp)
+            Text("Рабочих конфигураций: " + verifiedCount + ". Сервер публикует только узлы, прошедшие проверку HTTPS-туннеля.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
+        }
+
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Text("ПАРАМЕТРЫ РАБОТЫ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+            DetailLine("Порт сервера", "8765")
+            DetailLine("Формат выдачи", "Текстовая HAPP-подписка")
+            DetailLine("Лимит ответа", "До 1 500 уникальных проверенных конфигураций")
+            DetailLine("Защита", "Случайный секретный токен в URL · HTTPS снаружи через Cloudflare")
+            Text("Для длительной работы оставь системное уведомление сервера активным и отключи для приложения агрессивную экономию батареи. Android может завершать фоновые процессы.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun ServerAddressLine(title: String, url: String, onCopy: (String) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(SurfaceRaised).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(title, color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+        Text(url, color = TextPrimary, fontSize = 10.sp, lineHeight = 14.sp)
+        OutlinedButton(
+            onClick = { onCopy(url) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(9.dp),
+            contentPadding = PaddingValues(vertical = 7.dp)
+        ) {
+            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Копировать ссылку", fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
 private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, enabled: Boolean) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
