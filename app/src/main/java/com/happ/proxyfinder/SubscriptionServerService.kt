@@ -74,7 +74,9 @@ class SubscriptionServerService : Service() {
 
         try {
             ensureHttpServer()
-            if (intent?.action == ACTION_START_INTERNET) startTunnel()
+            val shouldRestoreInternetTunnel = intent?.action == ACTION_START_INTERNET ||
+                (intent?.action == null && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_INTERNET_ENABLED, false))
+            if (shouldRestoreInternetTunnel) startTunnel()
             val localStatus = if (intent?.action == ACTION_START_INTERNET) {
                 "Сервер запущен · подключаем интернет-доступ"
             } else {
