@@ -12,12 +12,13 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Collections
 import java.util.UUID
 
-/** Serves a live HAPP subscription containing only genuinely verified proxy tunnels. */
+/** Serves the live HAPP subscription on-device and can expose it through a public Cloudflare Quick Tunnel. */
 private fun subscriptionCountryFlag(code: String): String {
     if (code.length != 2 || !code.all { it in 'A'..'Z' || it in 'a'..'z' }) return "🌐"
     val upper = code.uppercase(java.util.Locale.ROOT)
@@ -27,6 +28,8 @@ private fun subscriptionCountryFlag(code: String): String {
 
 class SubscriptionServerService : Service() {
     private var server: SubscriptionHttpServer? = null
+    private var tunnelProcess: Process? = null
+    private var tunnelReader: Thread? = null
     private lateinit var repository: ProxyRepository
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -35,39 +38,56 @@ class SubscriptionServerService : Service() {
         repository = ProxyRepository(applicationContext)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "Локальный сервер подписки", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, "Сервер подписки", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopServer()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopTunnel()
+                stopServer()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_STOP_INTERNET -> {
+                stopTunnel()
+                if (server == null) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                } else {
+                    getSystemService(NotificationManager::class.java).notify(
+                        NOTIFICATION_ID, notification("Локальный сервер работает · внешний доступ выключен")
+                    )
+                }
+                return START_NOT_STICKY
+            }
         }
 
-        startForeground(NOTIFICATION_ID, notification("Сервер подписки запускается"))
+        startForeground(NOTIFICATION_ID, notification("Запускаем сервер подписки"))
         if (wakeLock?.isHeld != true) {
             wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ProxyFinder:SubscriptionServer").apply { acquire() }
         }
+
         try {
-            if (server == null) {
-                val httpServer = SubscriptionHttpServer(repository) {
-                    getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TOKEN, "").orEmpty()
-                }
-                httpServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-                server = httpServer
+            ensureHttpServer()
+            if (intent?.action == ACTION_START_INTERNET) startTunnel()
+            val localStatus = if (intent?.action == ACTION_START_INTERNET) {
+                "Сервер запущен · подключаем интернет-доступ"
+            } else {
+                "Сервер работает · порт $PORT"
             }
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
-            val address = localIpv4Address()
-            val status = if (address == null) "Сервер работает · IP сети не определён"
-                else "Подписка доступна на этом телефоне: http://127.0.0.1:$PORT/sub"
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(status))
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(localStatus))
         } catch (error: Exception) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, false).apply()
+            stopTunnel()
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_RUNNING, false)
+                .putBoolean(KEY_INTERNET_ENABLED, false)
+                .putString(KEY_TUNNEL_STATUS, "Ошибка запуска: ${error.message?.take(100) ?: "неизвестная ошибка"}")
+                .apply()
             getSystemService(NotificationManager::class.java).notify(
                 NOTIFICATION_ID,
                 notification("Ошибка запуска сервера: ${error.message?.take(80) ?: "неизвестная ошибка"}")
@@ -77,12 +97,130 @@ class SubscriptionServerService : Service() {
         return START_STICKY
     }
 
+    private fun ensureHttpServer() {
+        if (server == null) {
+            val httpServer = SubscriptionHttpServer(repository) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_TOKEN, "").orEmpty()
+            }
+            httpServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+            server = httpServer
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
+    }
+
+    /**
+     * Quick Tunnel provides a public HTTPS URL without inbound port forwarding.
+     * The subscription itself remains served by this Android process.
+     */
+    private fun startTunnel() {
+        if (tunnelProcess?.isAlive == true) return
+
+        val binary = File(applicationInfo.nativeLibraryDir, CLOUDFLARED_BINARY)
+        if (!binary.isFile || !binary.canExecute()) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_INTERNET_ENABLED, false)
+                .putString(KEY_PUBLIC_URL, "")
+                .putString(KEY_TUNNEL_STATUS, "Cloudflared не найден. Доступ из интернета доступен в ARM64-сборке.")
+                .apply()
+            return
+        }
+
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(KEY_INTERNET_ENABLED, true)
+            .putString(KEY_PUBLIC_URL, "")
+            .putString(KEY_TUNNEL_STATUS, "Устанавливаем защищённое соединение с Cloudflare…")
+            .apply()
+
+        val process = ProcessBuilder(
+            binary.absolutePath,
+            "tunnel",
+            "--no-autoupdate",
+            "--url", "http://127.0.0.1:$PORT",
+            "--edge-ip-version", "4"
+        ).redirectErrorStream(true).start()
+        tunnelProcess = process
+
+        tunnelReader = Thread({
+            var lastError = ""
+            try {
+                process.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        val publicHost = PUBLIC_HOST_REGEX.find(line)?.value
+                        if (publicHost != null) {
+                            val token = getSharedPreferences(PREFS, MODE_PRIVATE)
+                                .getString(KEY_TOKEN, "").orEmpty()
+                            if (token.isNotBlank()) {
+                                val url = "$publicHost/sub?token=$token"
+                                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                    .putString(KEY_PUBLIC_URL, url)
+                                    .putString(KEY_TUNNEL_STATUS, "Публичный адрес подключён")
+                                    .putBoolean(KEY_INTERNET_ENABLED, true)
+                                    .apply()
+                                getSystemService(NotificationManager::class.java).notify(
+                                    NOTIFICATION_ID, notification("Публичная подписка доступна из интернета")
+                                )
+                            }
+                        }
+                        if (line.contains("ERR", true) || line.contains("error", true) ||
+                            line.contains("failed", true) || line.contains("fatal", true)
+                        ) {
+                            lastError = line.take(180)
+                            if (getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PUBLIC_URL, "").isNullOrBlank()) {
+                                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                    .putString(KEY_TUNNEL_STATUS, "Cloudflare: $lastError")
+                                    .apply()
+                            }
+                        }
+                    }
+                }
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (error: Exception) {
+                lastError = error.message?.take(180) ?: "ошибка чтения процесса"
+            }
+
+            val exitCode = runCatching { process.waitFor() }.getOrDefault(-1)
+            if (tunnelProcess === process) {
+                tunnelProcess = null
+                val publicUrl = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PUBLIC_URL, "").orEmpty()
+                val status = if (publicUrl.isNotBlank()) {
+                    "Внешний туннель остановлен"
+                } else {
+                    lastError.ifBlank { "Cloudflare завершил подключение (код $exitCode)" }
+                }
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(KEY_INTERNET_ENABLED, false)
+                    .putString(KEY_PUBLIC_URL, "")
+                    .putString(KEY_TUNNEL_STATUS, status)
+                    .apply()
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(status))
+            }
+        }, "ProxyFinder-Cloudflare-Tunnel").apply { isDaemon = true; start() }
+    }
+
+    private fun stopTunnel() {
+        val process = tunnelProcess
+        tunnelProcess = null
+        runCatching { process?.destroy() }
+        runCatching { if (process?.isAlive == true) process.destroyForcibly() }
+        tunnelReader = null
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(KEY_INTERNET_ENABLED, false)
+            .putString(KEY_PUBLIC_URL, "")
+            .putString(KEY_TUNNEL_STATUS, "Внешний доступ выключен")
+            .apply()
+    }
+
     private fun stopServer() {
+        stopTunnel()
         runCatching { server?.stop() }
         server = null
         runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
         wakeLock = null
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, false).apply()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(KEY_RUNNING, false)
+            .putBoolean(KEY_INTERNET_ENABLED, false)
+            .apply()
     }
 
     override fun onDestroy() {
@@ -152,12 +290,19 @@ class SubscriptionServerService : Service() {
     companion object {
         const val ACTION_START = "com.happ.proxyfinder.START_SUBSCRIPTION_SERVER"
         const val ACTION_STOP = "com.happ.proxyfinder.STOP_SUBSCRIPTION_SERVER"
+        const val ACTION_START_INTERNET = "com.happ.proxyfinder.START_INTERNET_TUNNEL"
+        const val ACTION_STOP_INTERNET = "com.happ.proxyfinder.STOP_INTERNET_TUNNEL"
         const val PREFS = "proxy_finder"
         const val KEY_RUNNING = "subscription_server_running"
+        const val KEY_INTERNET_ENABLED = "subscription_server_internet_enabled"
+        const val KEY_PUBLIC_URL = "subscription_server_public_url"
+        const val KEY_TUNNEL_STATUS = "subscription_server_tunnel_status"
         private const val KEY_TOKEN = "local_subscription_token"
         private const val CHANNEL = "proxy_subscription_server"
         private const val NOTIFICATION_ID = 5110
         private const val PORT = 8765
+        private const val CLOUDFLARED_BINARY = "libcloudflared.so"
+        private val PUBLIC_HOST_REGEX = Regex("https://[a-z0-9-]+\\.trycloudflare\\.com", RegexOption.IGNORE_CASE)
 
         fun localIpv4Address(): String? = try {
             Collections.list(NetworkInterface.getNetworkInterfaces())
@@ -170,14 +315,17 @@ class SubscriptionServerService : Service() {
                 .firstOrNull { it != "127.0.0.1" && !it.startsWith("169.254.") }
         } catch (_: Exception) { null }
 
-        fun subscriptionUrl(context: Context): String? {
+        fun subscriptionToken(context: Context): String {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             var token = prefs.getString(KEY_TOKEN, null)
             if (token.isNullOrBlank()) {
                 token = UUID.randomUUID().toString().replace("-", "")
                 prefs.edit().putString(KEY_TOKEN, token).apply()
             }
-            return "http://127.0.0.1:$PORT/sub?token=$token"
+            return token
         }
+
+        fun subscriptionUrl(context: Context, host: String = "127.0.0.1"): String =
+            "http://$host:$PORT/sub?token=${subscriptionToken(context)}"
     }
 }
