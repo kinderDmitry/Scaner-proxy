@@ -133,14 +133,24 @@ class SubscriptionServerService : Service() {
             .putString(KEY_TUNNEL_STATUS, "Устанавливаем защищённое соединение с Cloudflare…")
             .apply()
 
+        // Android uses Bionic and does not provide the standard Linux /etc/resolv.conf.
+        // The build patches this path in the bundled Go binary to /proc/self/fd/0.
+        val dnsFile = File(filesDir, "cloudflared-resolv.conf").apply {
+            writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
+        }
         val process = try {
-            ProcessBuilder(
+            val builder = ProcessBuilder(
                 binary.absolutePath,
                 "tunnel",
                 "--no-autoupdate",
-                "--url", "http://127.0.0.1:$PORT",
-                "--edge-ip-version", "4"
-            ).redirectErrorStream(true).start()
+                "--edge-ip-version", "4",
+                "--protocol", "http2",
+                "--url", "http://127.0.0.1:$PORT"
+            )
+            builder.environment()["GODEBUG"] = "netdns=go"
+            builder.redirectInput(dnsFile)
+            builder.redirectErrorStream(true)
+            builder.start()
         } catch (error: Exception) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putBoolean(KEY_INTERNET_ENABLED, false)
