@@ -1,5 +1,6 @@
 package com.happ.proxyfinder
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -230,7 +231,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    var localServerEnabled by remember { mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean(SubscriptionServerService.KEY_RUNNING, false)) }
+    var selectedTab by remember { mutableStateOf("Сканер") }
+    var localServerEnabled by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getBoolean(SubscriptionServerService.KEY_RUNNING, false)) }
+    var internetTunnelEnabled by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)) }
+    var publicTunnelUrl by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getString(SubscriptionServerService.KEY_PUBLIC_URL, "").orEmpty()) }
+    var tunnelStatus by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getString(SubscriptionServerService.KEY_TUNNEL_STATUS, "Внешний доступ выключен").orEmpty()) }
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
@@ -245,6 +250,57 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var refreshCounter by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences(SubscriptionServerService.PREFS, Context.MODE_PRIVATE)
+        while (true) {
+            delay(900)
+            localServerEnabled = prefs.getBoolean(SubscriptionServerService.KEY_RUNNING, false)
+            internetTunnelEnabled = prefs.getBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)
+            publicTunnelUrl = prefs.getString(SubscriptionServerService.KEY_PUBLIC_URL, "").orEmpty()
+            tunnelStatus = prefs.getString(SubscriptionServerService.KEY_TUNNEL_STATUS, "Внешний доступ выключен").orEmpty()
+        }
+    }
+
+    fun setServerEnabled(enabled: Boolean) {
+        val prefs = context.getSharedPreferences(SubscriptionServerService.PREFS, Context.MODE_PRIVATE)
+        if (enabled) {
+            prefs.edit().putBoolean(SubscriptionServerService.KEY_RUNNING, true).apply()
+            localServerEnabled = true
+            androidx.core.content.ContextCompat.startForegroundService(
+                context, Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_START }
+            )
+        } else {
+            prefs.edit().putBoolean(SubscriptionServerService.KEY_RUNNING, false)
+                .putBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)
+                .putString(SubscriptionServerService.KEY_PUBLIC_URL, "").apply()
+            localServerEnabled = false
+            internetTunnelEnabled = false
+            publicTunnelUrl = ""
+            context.startService(Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_STOP })
+        }
+    }
+
+    fun setInternetEnabled(enabled: Boolean) {
+        val prefs = context.getSharedPreferences(SubscriptionServerService.PREFS, Context.MODE_PRIVATE)
+        if (enabled) {
+            prefs.edit().putBoolean(SubscriptionServerService.KEY_RUNNING, true)
+                .putBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, true)
+                .putString(SubscriptionServerService.KEY_PUBLIC_URL, "").apply()
+            localServerEnabled = true
+            internetTunnelEnabled = true
+            publicTunnelUrl = ""
+            androidx.core.content.ContextCompat.startForegroundService(
+                context, Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_START_INTERNET }
+            )
+        } else {
+            prefs.edit().putBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)
+                .putString(SubscriptionServerService.KEY_PUBLIC_URL, "").apply()
+            internetTunnelEnabled = false
+            publicTunnelUrl = ""
+            context.startService(Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_STOP_INTERNET })
+        }
+    }
 
     LaunchedEffect(repo) {
         val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
@@ -504,6 +560,41 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Icon(Icons.Default.Refresh, contentDescription = "Сканирование запускается кнопкой ниже", tint = TextMuted.copy(alpha = 0.65f), modifier = Modifier.size(22.dp))
                 }
             }
+            item(key = "navigationTabs") {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf("Сканер", "Сервер").forEach { tab ->
+                        val selected = selectedTab == tab
+                        Surface(
+                            modifier = Modifier.weight(1f).clickable { selectedTab = tab },
+                            color = if (selected) Color(0xFF123B5A) else Color.Transparent,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (selected) Blue.copy(alpha = 0.55f) else Color.Transparent)
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 11.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                Icon(if (tab == "Сервер") Icons.Default.CloudUpload else Icons.Default.Radar, null, tint = if (selected) Blue else TextMuted, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text(tab, color = if (selected) Blue else TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+            if (selectedTab == "Сервер") {
+                item(key = "serverSettings") {
+                    ServerSettingsPanel(
+                        serverEnabled = localServerEnabled,
+                        internetEnabled = internetTunnelEnabled,
+                        tunnelUrl = publicTunnelUrl,
+                        tunnelStatus = tunnelStatus,
+                        localUrl = SubscriptionServerService.subscriptionUrl(context),
+                        lanUrl = SubscriptionServerService.localIpv4Address()?.let { SubscriptionServerService.subscriptionUrl(context, it) },
+                        verifiedCount = verifiedExportItems.count { it.isExportReady },
+                        onServerChange = { setServerEnabled(it) },
+                        onInternetChange = { setInternetEnabled(it) },
+                        onCopy = onCopy
+                    )
+                }
+            } else {
             item(key = "hero") {
                 HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
             }
@@ -736,45 +827,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 }
                 Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
             }
-            item(key = "subscription") {
-                val localUrl = SubscriptionServerService.subscriptionUrl(context)
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("ВСТРОЕННЫЙ СЕРВЕР HAPP", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("Телефон сам раздаёт подписку. Каждый запрос получает только актуальные конфиги с подтверждённым HTTPS-туннелем.", color = TextMuted, fontSize = 10.sp, lineHeight = 15.sp)
-                        }
-                        Switch(
-                            checked = localServerEnabled,
-                            onCheckedChange = { enabled ->
-                                localServerEnabled = enabled
-                                context.getSharedPreferences("proxy_finder", 0).edit()
-                                    .putBoolean(SubscriptionServerService.KEY_RUNNING, enabled).apply()
-                                val serverIntent = Intent(context, SubscriptionServerService::class.java).apply {
-                                    action = if (enabled) SubscriptionServerService.ACTION_START else SubscriptionServerService.ACTION_STOP
-                                }
-                                if (enabled) androidx.core.content.ContextCompat.startForegroundService(context, serverIntent)
-                                else context.startService(serverIntent)
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f))
-                        )
-                    }
-                    Text(if (localServerEnabled) "Сервер включён · порт 8765" else "Сервер выключен", color = if (localServerEnabled) Green else TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    if (localServerEnabled && localUrl != null) {
-                        Text("ССЫЛКА ДЛЯ HAPP НА ЭТОМ ТЕЛЕФОНЕ", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        Text(localUrl, color = TextPrimary, fontSize = 11.sp)
-                        OutlinedButton(onClick = { onCopy(localUrl) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
-                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(7.dp))
-                            Text("Копировать ссылку подписки")
-                        }
-                    } else if (localServerEnabled) {
-                        Text("Не удалось определить IP-адрес Wi-Fi. Проверь подключение к сети.", color = Amber, fontSize = 10.sp)
-                    }
-                    Text("HAPP и сервер работают на одном телефоне — используй 127.0.0.1. Для других устройств в Wi-Fi потребуется отдельная LAN-ссылка. Сервер должен оставаться включённым в уведомлениях.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
-                    Text("Рабочих конфигураций в подписке: ${verifiedExportItems.count { it.isExportReady }} · неподтверждённые узлы не публикуются.", color = TextMuted, fontSize = 10.sp)
-                }
-            }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
                     val verifiedItems = verifiedExportItems.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()
@@ -845,6 +897,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     color = TextMuted.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )
+            }
             }
         }
     }
