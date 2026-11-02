@@ -761,7 +761,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     Text(if (localServerEnabled) "Сервер включён · порт 8765" else "Сервер выключен", color = if (localServerEnabled) Green else TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     if (localServerEnabled && localUrl != null) {
-                        Text("ССЫЛКА ДЛЯ HAPP В ЭТОЙ WI-FI СЕТИ", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text("ССЫЛКА ДЛЯ HAPP НА ЭТОМ ТЕЛЕФОНЕ", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         Text(localUrl, color = TextPrimary, fontSize = 11.sp)
                         OutlinedButton(onClick = { onCopy(localUrl) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
@@ -771,7 +771,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     } else if (localServerEnabled) {
                         Text("Не удалось определить IP-адрес Wi-Fi. Проверь подключение к сети.", color = Amber, fontSize = 10.sp)
                     }
-                    Text("Важно: эта ссылка работает в одной локальной сети Wi-Fi. Для доступа к телефону через интернет из другой сети понадобится внешний защищённый туннель или публичный relay. Android должен оставаться включённым, а сервер — работать в уведомлениях.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
+                    Text("HAPP и сервер работают на одном телефоне — используй 127.0.0.1. Для других устройств в Wi-Fi потребуется отдельная LAN-ссылка. Сервер должен оставаться включённым в уведомлениях.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
                     Text("Рабочих конфигураций в подписке: ${verifiedExportItems.count { it.isExportReady }} · неподтверждённые узлы не публикуются.", color = TextMuted, fontSize = 10.sp)
                 }
             }
