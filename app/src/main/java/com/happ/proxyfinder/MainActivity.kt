@@ -106,9 +106,6 @@ class MainActivity : ComponentActivity() {
                     ProxyFinderScreen(
                         repo = repository,
                         onShare = { item ->
-                            if (!item.isTunnelVerified) {
-                                Toast.makeText(this, "Сначала проверь прокси. В HAPP отправляются только подтверждённые туннели.", Toast.LENGTH_LONG).show()
-                            } else {
                             val config = namedConfigForImport(item)
                             val choices = arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
                             AlertDialog.Builder(this)
@@ -155,7 +152,6 @@ class MainActivity : ComponentActivity() {
                                 }
                                 .setNegativeButton("Отмена", null)
                                 .show()
-                            }
                         },
                         onCopy = { value ->
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -163,21 +159,21 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
                         },
                         onBulkShare = { items ->
-                            val verified = items.filter { it.isTunnelVerified }.distinctBy { it.rawConfig.trim() }
-                            if (verified.isNotEmpty()) {
-                            val payload = "#subscription-ping-onopen-enabled: 1\n" + verified.joinToString("\n") { namedConfigForImport(it) }
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, payload)
-                                putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${items.size} конфигураций")
-                            }
-                            startActivity(Intent.createChooser(send, "Передать ${verified.size} проверенных прокси в HAPP"))
-                            } else Toast.makeText(this, "Нет проверенных прокси для импорта.", Toast.LENGTH_LONG).show()
+                            val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                            if (unique.isNotEmpty()) {
+                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.joinToString("\n") { namedConfigForImport(it) }
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, payload)
+                                    putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${unique.size} конфигураций")
+                                }
+                                startActivity(Intent.createChooser(send, "Передать ${unique.size} прокси"))
+                            } else Toast.makeText(this, "Нет конфигураций для передачи.", Toast.LENGTH_LONG).show()
                         },
                         onCopyAllJson = { items ->
                             // HAPP accepts a subscription-style text list of URI configurations.
-                            // A JSON array of strings is not a valid Xray/HAPP JSON configuration.
-                            val unique = items.filter { it.isTunnelVerified }.distinctBy { it.rawConfig.trim() }
+                            // Include unverified configs too; their status remains visible in the app.
+                            val unique = items.distinctBy { it.rawConfig.trim() }
                                 .filter { it.rawConfig.isNotBlank() }
                             val payload = "#subscription-ping-onopen-enabled: 1\n" +
                                 unique.joinToString("\n") { namedConfigForImport(it) }
@@ -1167,13 +1163,13 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onShare, enabled = item.isTunnelVerified, modifier = Modifier.weight(1.1f), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
+                Button(onClick = onShare, modifier = Modifier.weight(1.1f), shape = RoundedCornerShape(11.dp), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
                     Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Передать", fontSize = 11.sp, maxLines = 1)
                 }
                 OutlinedButton(onClick = onCheck, enabled = item.supportsNativeTunnelCheck, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
                     Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = if (item.supportsNativeTunnelCheck) Blue else Amber); Spacer(Modifier.width(5.dp)); Text(if (item.supportsNativeTunnelCheck) "Проверить" else "Нужен core", fontSize = 10.sp, maxLines = 1, color = TextPrimary)
                 }
-                IconButton(onClick = onCopy, enabled = item.isTunnelVerified, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
+                IconButton(onClick = onCopy, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
                     Icon(Icons.Default.ContentCopy, "Копировать ссылку", tint = Blue, modifier = Modifier.size(17.dp))
                 }
             }
