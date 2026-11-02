@@ -133,13 +133,22 @@ class SubscriptionServerService : Service() {
             .putString(KEY_TUNNEL_STATUS, "Устанавливаем защищённое соединение с Cloudflare…")
             .apply()
 
-        val process = ProcessBuilder(
-            binary.absolutePath,
-            "tunnel",
-            "--no-autoupdate",
-            "--url", "http://127.0.0.1:$PORT",
-            "--edge-ip-version", "4"
-        ).redirectErrorStream(true).start()
+        val process = try {
+            ProcessBuilder(
+                binary.absolutePath,
+                "tunnel",
+                "--no-autoupdate",
+                "--url", "http://127.0.0.1:$PORT",
+                "--edge-ip-version", "4"
+            ).redirectErrorStream(true).start()
+        } catch (error: Exception) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_INTERNET_ENABLED, false)
+                .putString(KEY_PUBLIC_URL, "")
+                .putString(KEY_TUNNEL_STATUS, "Не удалось запустить Cloudflare: ${error.message?.take(150) ?: "ошибка запуска"}")
+                .apply()
+            return
+        }
         tunnelProcess = process
 
         tunnelReader = Thread({
