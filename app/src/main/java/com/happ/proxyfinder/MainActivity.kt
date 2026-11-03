@@ -120,11 +120,14 @@ class MainActivity : ComponentActivity() {
                     ProxyFinderScreen(
                         repo = repository,
                         onShare = { item ->
-                            val config = namedConfigForImport(item)
-                            val choices = arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
+                            val config = normalizeProxySchemeForHapp(item.rawConfig)
+                            val isSocks4 = item.protocol.equals("SOCKS4", ignoreCase = true)
+                            val choices = if (isSocks4) arrayOf("Другие приложения / поделиться", "Копировать конфигурацию")
+                                else arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
                             AlertDialog.Builder(this)
-                                .setTitle("Куда добавить конфигурацию?")
-                                .setItems(choices) { _, which ->
+                                .setTitle(if (isSocks4) "SOCKS4 не поддерживается HAPP" else "Куда добавить конфигурацию?")
+                                .setItems(choices) { _, selected ->
+                                    val which = if (isSocks4) selected + 2 else selected
                                     fun shareChooser() {
                                         val send = Intent(Intent.ACTION_SEND).apply {
                                             type = "text/plain"
@@ -135,26 +138,18 @@ class MainActivity : ComponentActivity() {
                                     }
                                     when (which) {
                                         0 -> {
-                                            // HAPP supports its happ://add deep link for import links.
                                             val deepLink = Uri.Builder().scheme("happ").authority("add").appendPath(config).build()
                                             val intent = Intent(Intent.ACTION_VIEW, deepLink)
-                                            if (intent.resolveActivity(packageManager) != null) {
-                                                startActivity(intent)
-                                            } else {
-                                                Toast.makeText(this, "HAPP не найден. Скопируйте ссылку или выберите другое приложение.", Toast.LENGTH_LONG).show()
-                                                shareChooser()
+                                            if (intent.resolveActivity(packageManager) != null) startActivity(intent) else {
+                                                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SOCKS5 configuration", config))
+                                                Toast.makeText(this, "HAPP не найден. Конфигурация скопирована.", Toast.LENGTH_LONG).show()
                                             }
                                         }
                                         1 -> {
-                                            // Hiddify's documented import format accepts a single proxy URI.
                                             val deepLink = Uri.Builder().scheme("hiddify").authority("import").appendPath(config).build()
                                             val intent = Intent(Intent.ACTION_VIEW, deepLink)
-                                            if (intent.resolveActivity(packageManager) != null) {
-                                                startActivity(intent)
-                                            } else {
-                                                Toast.makeText(this, "Hiddify не найден. Скопируйте ссылку или выберите другое приложение.", Toast.LENGTH_LONG).show()
-                                                shareChooser()
-                                            }
+                                            if (intent.resolveActivity(packageManager) != null) startActivity(intent) else shareChooser()
                                         }
                                         2 -> shareChooser()
                                         3 -> {
@@ -175,7 +170,7 @@ class MainActivity : ComponentActivity() {
                         onBulkShare = { items ->
                             val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
                             if (unique.isNotEmpty()) {
-                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.joinToString("\n") { namedConfigForImport(it) }
+                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.filterNot { it.protocol.equals("SOCKS4", true) }.joinToString("\n") { normalizeProxySchemeForHapp(it.rawConfig) }
                                 val send = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, payload)
@@ -205,24 +200,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-internal fun normalizeProxySchemeForHapp(config: String): String =
-    config.trim().replace(Regex("^socks5://", RegexOption.IGNORE_CASE), "socks://")
-
-private fun namedConfigForImport(item: ProxyItem): String {
-    val location = listOf(item.city, item.country).filter { it.isNotBlank() }.joinToString(", ")
-    val displayName = (if (location.isNotBlank() && item.countryCode.length == 2) {
-        countryFlag(item.countryCode) + " " + location
-    } else if (location.isNotBlank()) {
-        location
-    } else {
-        item.title.ifBlank { item.protocol }
-    }).take(48)
-    val description = android.util.Base64.encodeToString(
-        item.protocol.toByteArray(Charsets.UTF_8),
-        android.util.Base64.NO_WRAP
-    )
-    return normalizeProxySchemeForHapp(item.rawConfig).substringBefore('#') +
-        "#" + Uri.encode(displayName) + "?serverDescription=" + description
+internal fun normalizeProxySchemeForHapp(config: String): String {
+    val value = config.trim().removePrefix("\uFEFF")
+    if (value.isEmpty()) return value
+    // HAPP uses socks:// for SOCKS5. Preserve endpoint and authentication verbatim.
+    return value.replace(Regex("^socks5://", RegexOption.IGNORE_CASE), "socks://")
 }
 
 @Composable
