@@ -27,6 +27,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -204,7 +205,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun normalizeProxySchemeForHapp(config: String): String =
+internal fun normalizeProxySchemeForHapp(config: String): String =
     config.trim().replace(Regex("^socks5://", RegexOption.IGNORE_CASE), "socks://")
 
 private fun namedConfigForImport(item: ProxyItem): String {
