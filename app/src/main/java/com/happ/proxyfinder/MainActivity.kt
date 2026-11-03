@@ -342,7 +342,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun scan() {
         if (loading) return
-        selectedProtocols = scanFiltersSelected
+        val scanAllProtocols = scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10
+        selectedProtocols = if (scanAllProtocols) emptySet() else scanFiltersSelected
         loading = true
         errorMessage = ""
         if (scanScope == "Диапазон IP") {
@@ -372,7 +373,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         sourceProgress = "Подготовка"
         scope.launch {
             try {
-                val requested = if (scanFiltersSelected.isEmpty()) listOf("Все типы") else scanFiltersSelected.toList()
+                val requested = if (scanAllProtocols) listOf("Все типы") else scanFiltersSelected.toList()
                 val results = requested.map { filter -> repo.fetch(filter) { name -> withContext(Dispatchers.Main) { sourceProgress = "$filter · $name" } } }
                 val combinedCounts = results.flatMap { it.sourceCounts.entries }
                     .groupBy { it.key }
@@ -585,7 +586,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
                     }
                     Text("ВНЕШНИЙ ФИЛЬТР · ПРОТОКОЛЫ ИСТОЧНИКОВ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Text(if (scanFiltersSelected.isEmpty()) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = NeonOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = NeonOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 10.sp)
                     val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
                     MultiSelectChips(
