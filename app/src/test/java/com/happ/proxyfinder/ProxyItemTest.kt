@@ -19,6 +19,28 @@ class ProxyItemTest {
     )
 
     @Test
+    fun happExportNormalizesSocks5SchemeWithoutChangingCredentialsOrEndpoint() {
+        assertEquals(
+            "socks://user:secret@proxy.example:1080#node",
+            normalizeProxySchemeForHapp("  socks5://user:secret@proxy.example:1080#node  ")
+        )
+        assertEquals(
+            "socks://user:secret@proxy.example:1080",
+            normalizeProxySchemeForHapp("SOCKS5://user:secret@proxy.example:1080")
+        )
+    }
+
+    @Test
+    fun happExportLeavesOtherProxySchemesUntouched() {
+        val configs = listOf(
+            "socks4://127.0.0.1:1080",
+            "http://127.0.0.1:8080",
+            "vless://id@example.com:443"
+        )
+        configs.forEach { assertEquals(it, normalizeProxySchemeForHapp(it)) }
+    }
+
+    @Test
     fun parserExtractsCountryFlagAndLabelsInternetSource() {
         val parsed = ConfigParser.parseConfig(
             "vless://00000000-0000-0000-0000-000000000000@example.com:443?security=tls#%F0%9F%87%BA%F0%9F%87%B8%20United%20States"
