@@ -163,7 +163,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onCopy = { value ->
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configuration", value))
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configuration", normalizeProxySchemeForHapp(value)))
                             Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
                         },
                         onBulkShare = { items ->
@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity() {
                                         put("id", item.id); put("protocol", item.protocol); put("host", item.host); put("port", item.port)
                                         put("name", item.title); put("country", item.country); put("city", item.city)
                                         put("source", item.source); put("status", item.checkStatus); put("verified", item.isTunnelVerified)
-                                        put("latencyMs", item.latencyMs ?: org.json.JSONObject.NULL); put("config", item.rawConfig)
+                                        put("latencyMs", item.latencyMs ?: org.json.JSONObject.NULL); put("config", normalizeProxySchemeForHapp(item.rawConfig))
                                     }) }
                                 }).toString(2)
                             jsonFileLauncher.launch("proxy-finder-${System.currentTimeMillis()}.json")
@@ -198,6 +198,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private fun normalizeProxySchemeForHapp(config: String): String =
+    config.trim().replace(Regex("^socks5://", RegexOption.IGNORE_CASE), "socks://")
 
 private fun namedConfigForImport(item: ProxyItem): String {
     val location = listOf(item.city, item.country).filter { it.isNotBlank() }.joinToString(", ")
@@ -212,7 +215,7 @@ private fun namedConfigForImport(item: ProxyItem): String {
         item.protocol.toByteArray(Charsets.UTF_8),
         android.util.Base64.NO_WRAP
     )
-    return item.rawConfig.trim().substringBefore('#') +
+    return normalizeProxySchemeForHapp(item.rawConfig).substringBefore('#') +
         "#" + Uri.encode(displayName) + "?serverDescription=" + description
 }
 
