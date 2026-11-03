@@ -99,8 +99,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(7, 10, 18)
-        window.navigationBarColor = android.graphics.Color.rgb(7, 10, 18)
+        window.statusBarColor = android.graphics.Color.rgb(8, 8, 8)
+        window.navigationBarColor = android.graphics.Color.rgb(8, 8, 8)
         repository = ProxyRepository(this)
         setContent {
             val scheme = darkColorScheme(
@@ -786,7 +786,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
-                    Text(if (verifiedItems.isEmpty()) "Пока нет подтверждённых туннелей. TCP-ответ сам по себе не считается рабочим прокси." else "Экспортируются все найденные уникальные конфигурации, включая непроверенные.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                    Text("Экспортируются все найденные уникальные конфигурации, включая непроверенные. Проверка и её статус сохраняются отдельно.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                    OutlinedButton(onClick = { onCopyAllJson(verifiedItems) }, enabled = verifiedItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Default.ContentCopy, null, tint = Blue)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Сохранить JSON-файл", color = Blue)
+                    }
                     }
                 }
             }
