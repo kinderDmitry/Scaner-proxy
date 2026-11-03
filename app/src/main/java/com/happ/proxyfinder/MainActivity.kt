@@ -227,12 +227,6 @@ private fun namedConfigForImport(item: ProxyItem): String {
 @Composable
 private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
-    var verifiedExportItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
-    var workerUrl by remember { mutableStateOf(repo.loadSubscriptionWorkerUrl()) }
-    var publishToken by remember { mutableStateOf(repo.loadSubscriptionToken()) }
-    var subscriptionUrl by remember { mutableStateOf(repo.loadSubscriptionUrl()) }
-
-    var publishingSubscription by remember { mutableStateOf(false) }
     var displayLimit by remember { mutableIntStateOf(100) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
@@ -263,9 +257,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     LaunchedEffect(repo) {
         val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
-        val verified = withContext(Dispatchers.IO) { repo.loadVerifiedSnapshot() }
         allItems = restored
-        verifiedExportItems = verified
         sourceStatus = if (restored.isEmpty()) "Готов к сканированию" else "Загружено ${restored.size} последних узлов · база сохранена"
     }
 
@@ -304,25 +296,15 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         scope.launch(Dispatchers.IO) {
             repo.saveSnapshot(items)
             repo.saveFavorites(favorites)
-            val verified = repo.loadVerifiedSnapshot()
-            withContext(Dispatchers.Main) { verifiedExportItems = verified }
         }
     }
 
-    suspend fun persistAndRefreshSubscription(items: List<ProxyItem>) {
+    suspend fun persistAndSave(items: List<ProxyItem>) {
         allItems = items
         val favorites = items.filter { it.favorite }.map { it.id }.toSet()
-        val verified = withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             repo.saveSnapshot(items)
             repo.saveFavorites(favorites)
-            repo.loadVerifiedSnapshot()
-        }
-        verifiedExportItems = verified
-        // Once the user has created a subscription, every completed verification batch refreshes its content.
-        if (subscriptionUrl.isNotBlank() && workerUrl.startsWith("https://") && publishToken.isNotBlank() && verified.isNotEmpty()) {
-            runCatching { repo.publishSubscription(workerUrl, publishToken, verified) }
-                .onSuccess { subscriptionUrl = it }
-                .onFailure { sourceProgress = "Не удалось обновить подписку: ${it.message?.take(100) ?: "ошибка сети"}" }
         }
     }
 
@@ -344,7 +326,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     checkingCount = (checkingCount - 1).coerceAtLeast(0)
                 }
                 val byId = updates.associateBy { it.id }
-                persistAndRefreshSubscription(allItems.map { byId[it.id]?.copy(favorite = it.favorite) ?: it })
+                persistAndSave(allItems.map { byId[it.id]?.copy(favorite = it.favorite) ?: it })
                 val verifiedNow = updates.count { it.isTunnelVerified }
                 sourceStatus = "Пакет проверен: ${updates.size} · рабочих туннелей: $verifiedNow"
                 sourceProgress = "Можно запустить следующий пакет. Неподдерживаемые протоколы не выдаются за проверенные."
@@ -353,27 +335,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             } finally {
                 autoCheckRunning = false
                 checkingCount = 0
-            }
-        }
-    }
-
-    fun publishVerifiedSubscription() {
-        if (publishingSubscription) return
-        publishingSubscription = true
-        errorMessage = ""
-        scope.launch {
-            try {
-                repo.saveSubscriptionSettings(workerUrl, publishToken)
-                val verified = withContext(Dispatchers.IO) { repo.loadVerifiedSnapshot() }
-                val publishedUrl = repo.publishSubscription(workerUrl, publishToken, verified)
-                subscriptionUrl = publishedUrl
-                sourceStatus = "Подписка обновлена: ${verified.size.coerceAtMost(1500)} проверенных конфигураций"
-                sourceProgress = "Ссылка ведёт на актуальный список и обновляется при повторной публикации"
-                Toast.makeText(context, "Ссылка подписки создана и обновлена", Toast.LENGTH_LONG).show()
-            } catch (error: Exception) {
-                errorMessage = error.message?.take(220) ?: "Не удалось опубликовать подписку"
-            } finally {
-                publishingSubscription = false
             }
         }
     }
@@ -466,9 +427,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             }
                         }
                         val updatedIds = updates.associateBy { it.id }
-                        persistAndRefreshSubscription(allItems.map { updatedIds[it.id] ?: it })
+                        persistAndSave(allItems.map { updatedIds[it.id] ?: it })
                     } else {
-                        persistAndRefreshSubscription(allItems)
+                        persistAndSave(allItems)
                     }
                     sourceStatus = "Сканирование завершено"
                     sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
