@@ -104,8 +104,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(8, 8, 8)
-        window.navigationBarColor = android.graphics.Color.rgb(8, 8, 8)
+        window.statusBarColor = android.graphics.Color.rgb(7, 7, 7)
+        window.navigationBarColor = android.graphics.Color.rgb(7, 7, 7)
         repository = ProxyRepository(this)
         setContent {
             val scheme = darkColorScheme(
@@ -275,6 +275,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             delay(15_000)
             if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
                 val candidates = allItems.asSequence().filter { it.needsNativeTunnelCheck }.take(48).toList().ifEmpty { allItems.filter { it.isTunnelVerified }.take(48) }
+                if (candidates.isEmpty()) continue
                 val candidate = candidates[cursor % candidates.size]
                 cursor = (cursor + 1) % candidates.size
                 autoCheckRunning = true
@@ -532,7 +533,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                        Text("SMART PROXY DISCOVERY", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.65.sp)
+                        Text("ПОИСК И ПРОВЕРКА ПРОКСИ", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.65.sp)
                     }
                     Box(
                         Modifier.clip(RoundedCornerShape(20.dp))
@@ -542,7 +543,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(Icons.Default.Radar, null, tint = NeonOrange, modifier = Modifier.size(14.dp))
-                            Text("SCANNER", color = NeonOrange, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+                            Text("СКАНЕР", color = NeonOrange, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
                         }
                     }
                 }
@@ -647,8 +648,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "autoRefresh") {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                        .background(Brush.horizontalGradient(listOf(Color(0xFF21150D), Surface)))
+                    Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(17.dp))
                         .padding(horizontal = 14.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -746,7 +746,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     enabled = pendingNative > 0 && !loading && !autoCheckRunning,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF321A0B), contentColor = Color(0xFFFFE8D1))
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonOrange.copy(alpha = 0.15f), contentColor = TextPrimary)
                 ) {
                     if (autoCheckRunning) CircularProgressIndicator(Modifier.size(17.dp), color = NeonOrange, strokeWidth = 2.dp)
                     else Icon(Icons.Default.NetworkCheck, null, tint = NeonOrange, modifier = Modifier.size(18.dp))
@@ -760,11 +760,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
-                    val verifiedItems = allItems.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                    val exportItems = allItems.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
                                         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Button(
-                        onClick = { onBulkShare(verifiedItems) },
-                        enabled = verifiedItems.isNotEmpty(),
+                        onClick = { onBulkShare(exportItems) },
+                        enabled = exportItems.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
                         shape = RoundedCornerShape(15.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF7A18), contentColor = Color(0xFF1A0B02)),
@@ -774,12 +774,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
                             Text("Поделиться конфигурациями", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("${verifiedItems.size} узлов · включая непроверенные", fontSize = 10.sp, color = Color(0xFF5C2C0B))
+                            Text("${exportItems.size} узлов · включая непроверенные", fontSize = 10.sp, color = Color(0xFF5C2C0B))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
                     Text("Экспортируются все найденные уникальные конфигурации, включая непроверенные. Проверка и её статус сохраняются отдельно.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
-                    OutlinedButton(onClick = { onCopyAllJson(verifiedItems) }, enabled = verifiedItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    OutlinedButton(onClick = { onCopyAllJson(exportItems) }, enabled = exportItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.ContentCopy, null, tint = NeonOrange)
                         Spacer(Modifier.width(8.dp))
                         Text("Сохранить JSON-файл", color = NeonOrange)
@@ -829,7 +829,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "disclaimer") {
                 Text(
-                    "В HAPP экспортируются только узлы с успешным HTTP 204 через прокси. Для VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC пока доступна только TCP-проверка — они не выдаются за проверенные туннели.",
+                    "При передаче в HAPP доступны все найденные конфигурации, в том числе непроверенные. У SOCKS4/SOCKS5/HTTP/HTTPS проверяется туннель; у VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC без sing-box core подтверждается только TCP-доступность.",
                     color = TextMuted.copy(alpha = 0.75f), fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )
@@ -863,7 +863,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Box(Modifier.size(7.dp).clip(CircleShape).background(if (loading) NeonOrange else Green))
                     Text(
-                        if (loading) "SCANNER ACTIVE" else "READY TO SCAN",
+                        if (loading) "СКАНЕР АКТИВЕН" else "ГОТОВ К СКАНИРОВАНИЮ",
                         color = if (loading) NeonOrange else Green,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -1060,7 +1060,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                 OutlinedButton(onClick = onCheck, enabled = item.supportsNativeTunnelCheck, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
                     Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = if (item.supportsNativeTunnelCheck) NeonOrange else Amber); Spacer(Modifier.width(5.dp)); Text(if (item.supportsNativeTunnelCheck) "Проверить" else "Нужен core", fontSize = 10.sp, maxLines = 1, color = TextPrimary)
                 }
-                IconButton(onClick = onCopy, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
+                IconButton(onClick = onCopy, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(NeonOrange.copy(alpha = 0.10f)).border(1.dp, NeonOrange.copy(alpha = 0.32f), RoundedCornerShape(11.dp))) {
                     Icon(Icons.Default.ContentCopy, "Копировать ссылку", tint = NeonOrange, modifier = Modifier.size(17.dp))
                 }
             }
