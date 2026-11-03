@@ -7,6 +7,7 @@ import android.widget.Toast
 import android.app.AlertDialog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -88,6 +89,13 @@ private val Line = Color(0xFF51301A)
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
+    private var pendingJsonExport: String = "{}"
+    private val jsonFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) runCatching {
+            contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(pendingJsonExport) } ?: error("Не удалось открыть файл")
+            Toast.makeText(this, "JSON-файл сохранён", Toast.LENGTH_LONG).show()
+        }.onFailure { Toast.makeText(this, "Ошибка сохранения: ${it.message}", Toast.LENGTH_LONG).show() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,15 +179,18 @@ class MainActivity : ComponentActivity() {
                             } else Toast.makeText(this, "Нет конфигураций для передачи.", Toast.LENGTH_LONG).show()
                         },
                         onCopyAllJson = { items ->
-                            // HAPP accepts a subscription-style text list of URI configurations.
-                            // Include unverified configs too; their status remains visible in the app.
-                            val unique = items.distinctBy { it.rawConfig.trim() }
-                                .filter { it.rawConfig.isNotBlank() }
-                            val payload = "#subscription-ping-onopen-enabled: 1\n" +
-                                unique.joinToString("\n") { namedConfigForImport(it) }
-                            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP configurations", payload))
-                            Toast.makeText(this, "Список для HAPP скопирован: ${unique.size} конфигураций", Toast.LENGTH_LONG).show()
+                            val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                            pendingJsonExport = org.json.JSONObject().put("format", "happ-proxy-finder").put("version", 1)
+                                .put("exportedAt", System.currentTimeMillis())
+                                .put("proxies", org.json.JSONArray().apply {
+                                    unique.forEach { item -> put(org.json.JSONObject().apply {
+                                        put("id", item.id); put("protocol", item.protocol); put("host", item.host); put("port", item.port)
+                                        put("name", item.title); put("country", item.country); put("city", item.city)
+                                        put("source", item.source); put("status", item.checkStatus); put("verified", item.isTunnelVerified)
+                                        put("latencyMs", item.latencyMs ?: org.json.JSONObject.NULL); put("config", item.rawConfig)
+                                    }) }
+                                }).toString(2)
+                            jsonFileLauncher.launch("proxy-finder-${System.currentTimeMillis()}.json")
                         }
                     )
                 }
@@ -908,6 +919,25 @@ private fun MetricCard(title: String, value: String, caption: String, icon: andr
             Text(current, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
         }
         Text(caption, color = TextMuted.copy(alpha = 0.8f), fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun MultiSelectChips(items: List<String>, selected: Set<String>, onChange: (Set<String>) -> Unit, allLabel: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+            FilterChip(selected = selected.isEmpty(), onClick = { onChange(emptySet()) }, label = { Text(allLabel) })
+            FilterChip(selected = selected.size == items.size, onClick = { onChange(if (selected.size == items.size) emptySet() else items.toSet()) }, label = { Text("Выбрать все") })
+        }
+        items.chunked(3).forEach { rowItems ->
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                rowItems.forEach { item ->
+                    val active = item in selected
+                    FilterChip(selected = active, onClick = { onChange(if (active) selected - item else selected + item) }, label = { Text(item, maxLines = 1) }, modifier = Modifier.weight(1f))
+                }
+                repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 
