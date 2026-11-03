@@ -73,18 +73,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Bg = Color(0xFF070A12)
-private val Surface = Color(0xFF101827)
-private val SurfaceRaised = Color(0xFF151F31)
-private val Blue = Color(0xFF53C8FF)
-private val BlueDeep = Color(0xFF1E86FF)
-private val Cyan = Color(0xFF78F0FF)
+private val Bg = Color(0xFF080808)
+private val Surface = Color(0xFF15110E)
+private val SurfaceRaised = Color(0xFF21170F)
+private val Blue = Color(0xFFFF8A24)
+private val BlueDeep = Color(0xFFFF5A12)
+private val Cyan = Color(0xFFFFB45E)
 private val Green = Color(0xFF52E6A6)
 private val Amber = Color(0xFFFFC76A)
 private val Red = Color(0xFFFF7189)
 private val TextPrimary = Color(0xFFF4F8FF)
-private val TextMuted = Color(0xFF8C9AB1)
-private val Line = Color(0xFF26354B)
+private val TextMuted = Color(0xFFB59B83)
+private val Line = Color(0xFF51301A)
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
@@ -221,21 +221,17 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var sourceStatus by remember { mutableStateOf(if (allItems.isEmpty()) "Готов к сканированию" else "Сохранённые результаты загружены") }
     var sourceProgress by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
-    var selectedProtocol by remember { mutableStateOf("Все протоколы") }
+    var selectedProtocols by remember { mutableStateOf(setOf<String>()) }
     var selectedCountry by remember { mutableStateOf("Все страны") }
     var onlyAvailable by remember { mutableStateOf(false) }
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf("Сканер") }
-    var localServerEnabled by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getBoolean(SubscriptionServerService.KEY_RUNNING, false)) }
-    var internetTunnelEnabled by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)) }
-    var publicTunnelUrl by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getString(SubscriptionServerService.KEY_PUBLIC_URL, "").orEmpty()) }
-    var tunnelStatus by remember { mutableStateOf(context.getSharedPreferences(SubscriptionServerService.PREFS, 0).getString(SubscriptionServerService.KEY_TUNNEL_STATUS, "Внешний доступ выключен").orEmpty()) }
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
-    var scanFilter by remember { mutableStateOf("Все типы") }
+    var scanFiltersSelected by remember { mutableStateOf(setOf<String>()) }
     var scanScope by remember { mutableStateOf("Весь мир") }
     var targetRange by remember { mutableStateOf("192.168.1.0/24") }
     var targetPorts by remember { mutableStateOf("1080, 3128, 8080, 8081, 8888, 9050") }
@@ -246,57 +242,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var refreshCounter by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences(SubscriptionServerService.PREFS, Context.MODE_PRIVATE)
-        while (true) {
-            delay(900)
-            localServerEnabled = prefs.getBoolean(SubscriptionServerService.KEY_RUNNING, false)
-            internetTunnelEnabled = prefs.getBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)
-            publicTunnelUrl = prefs.getString(SubscriptionServerService.KEY_PUBLIC_URL, "").orEmpty()
-            tunnelStatus = prefs.getString(SubscriptionServerService.KEY_TUNNEL_STATUS, "Внешний доступ выключен").orEmpty()
-        }
-    }
-
-    fun setServerEnabled(enabled: Boolean) {
-        val prefs = context.getSharedPreferences(SubscriptionServerService.PREFS, Context.MODE_PRIVATE)
-        if (enabled) {
-            prefs.edit().putBoolean(SubscriptionServerService.KEY_RUNNING, true).apply()
-            localServerEnabled = true
-            androidx.core.content.ContextCompat.startForegroundService(
-                context, Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_START }
-            )
-        } else {
-            prefs.edit().putBoolean(SubscriptionServerService.KEY_RUNNING, false)
-                .putBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)
-                .putString(SubscriptionServerService.KEY_PUBLIC_URL, "").apply()
-            localServerEnabled = false
-            internetTunnelEnabled = false
-            publicTunnelUrl = ""
-            context.startService(Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_STOP })
-        }
-    }
-
-    fun setInternetEnabled(enabled: Boolean) {
-        val prefs = context.getSharedPreferences(SubscriptionServerService.PREFS, Context.MODE_PRIVATE)
-        if (enabled) {
-            prefs.edit().putBoolean(SubscriptionServerService.KEY_RUNNING, true)
-                .putBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, true)
-                .putString(SubscriptionServerService.KEY_PUBLIC_URL, "").apply()
-            localServerEnabled = true
-            internetTunnelEnabled = true
-            publicTunnelUrl = ""
-            androidx.core.content.ContextCompat.startForegroundService(
-                context, Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_START_INTERNET }
-            )
-        } else {
-            prefs.edit().putBoolean(SubscriptionServerService.KEY_INTERNET_ENABLED, false)
-                .putString(SubscriptionServerService.KEY_PUBLIC_URL, "").apply()
-            internetTunnelEnabled = false
-            publicTunnelUrl = ""
-            context.startService(Intent(context, SubscriptionServerService::class.java).apply { action = SubscriptionServerService.ACTION_STOP_INTERNET })
-        }
-    }
 
     LaunchedEffect(repo) {
         val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
@@ -416,7 +361,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun scan() {
         if (loading) return
-        selectedProtocol = if (scanFilter == "Все типы") "Все протоколы" else scanFilter
+        selectedProtocols = scanFiltersSelected
         loading = true
         errorMessage = ""
         if (scanScope == "Диапазон IP") {
@@ -446,9 +391,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         sourceProgress = "Подготовка"
         scope.launch {
             try {
-                val fetched = repo.fetch(scanFilter) { name ->
-                    withContext(Dispatchers.Main) { sourceProgress = name }
-                }
+                val requested = if (scanFiltersSelected.isEmpty()) listOf("Все типы") else scanFiltersSelected.toList()
+                val results = requested.map { filter -> repo.fetch(filter) { name -> withContext(Dispatchers.Main) { sourceProgress = "$filter · $name" } } }
+                val fetched = FetchResult(results.flatMap { it.items }.distinctBy { it.rawConfig.trim() }, results.flatMap { it.sourceCounts.entries }.associate { it.toPair() }, results.flatMap { it.sourceErrors.entries }.associate { it.toPair() })
                 val matchedItems = fetched.items
                 val currentItems = allItems
                 val merged = withContext(Dispatchers.Default) {
@@ -466,7 +411,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         }
                 }
                 persist(merged)
-                sourceStatus = "Получено по фильтру «$scanFilter»: ${matchedItems.size} · всего в базе: ${merged.size}"
+                sourceStatus = "Получено по выбранным протоколам: ${matchedItems.size} · всего в базе: ${merged.size}"
                 sourceProgress = buildString {
                     append("Источники: ${fetched.sourceCounts.count { it.value > 0 }}/${fetched.sourceCounts.size} с конфигурациями")
                     if (fetched.sourceErrors.isNotEmpty()) {
@@ -479,7 +424,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     errorMessage = if (fetched.items.isEmpty()) {
                         "Источники не ответили или не содержат поддерживаемых конфигураций. Проверь подключение и повтори попытку."
                     } else {
-                        "По фильтру «$scanFilter» новых конфигураций нет. Ранее найденные узлы сохранены; выбери «Все типы» или другой протокол."
+                        "По выбранным протоколам новых конфигураций нет. Ранее найденные узлы сохранены; измени фильтр и повтори поиск."
                     }
                 } else {
                     val batch = merged.filter { it.needsNativeTunnelCheck }.take(48)
@@ -499,7 +444,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     sourceStatus = "Сканирование завершено"
                     sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
-                    if (allItems.any { it.city.isBlank() } && scanFilter == "Все типы") {
+                    if (allItems.any { it.city.isBlank() } && scanFiltersSelected.isEmpty()) {
                         geoLoading = true
                         val countryItems = repo.resolveCountries(allItems.take(48).filter { it.city.isBlank() }) { resolved ->
                             withContext(Dispatchers.Main) {
@@ -522,12 +467,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    val protocols = listOf("Все протоколы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+    val protocols = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
     val countries = remember(allItems) { listOf("Все страны") + allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
-    val visible = remember(allItems, query, selectedProtocol, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
+    val visible = remember(allItems, query, selectedProtocols, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
         val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country}"
         (query.isBlank() || haystack.contains(query, true)) &&
-            (selectedProtocol == "Все протоколы" || item.protocol.equals(selectedProtocol, true)) &&
+            (selectedProtocols.isEmpty() || selectedProtocols.any { item.protocol.equals(it, true) }) &&
             (selectedCountry == "Все страны" || item.country == selectedCountry) &&
             (!onlyAvailable || item.isTunnelVerified) && (!onlyFavorites || item.favorite)
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
@@ -558,7 +503,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "navigationTabs") {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    listOf("Сканер", "Сервер").forEach { tab ->
+                    listOf("Сканер").forEach { tab ->
                         val selected = selectedTab == tab
                         Surface(
                             modifier = Modifier.weight(1f).clickable { selectedTab = tab },
@@ -575,22 +520,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                 }
             }
-            if (selectedTab == "Сервер") {
-                item(key = "serverSettings") {
-                    ServerSettingsPanel(
-                        serverEnabled = localServerEnabled,
-                        internetEnabled = internetTunnelEnabled,
-                        tunnelUrl = publicTunnelUrl,
-                        tunnelStatus = tunnelStatus,
-                        localUrl = SubscriptionServerService.subscriptionUrl(context),
-                        lanUrl = SubscriptionServerService.localIpv4Address()?.let { SubscriptionServerService.subscriptionUrl(context, it) },
-                        verifiedCount = verifiedExportItems.count { it.isExportReady },
-                        onServerChange = { setServerEnabled(it) },
-                        onInternetChange = { setInternetEnabled(it) },
-                        onCopy = onCopy
-                    )
-                }
-            } else {
+            if (true) {
             item(key = "hero") {
                 HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
             }
@@ -665,15 +595,17 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         )
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
                     }
-                    Text("ТИП ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    val scanFilters = listOf("Все типы", "VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+                    Text("ВНЕШНИЙ ФИЛЬТР · ПРОТОКОЛЫ ИСТОЧНИКОВ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text(if (scanFiltersSelected.isEmpty()) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = Blue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 10.sp)
+                    val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
                     scanFilters.chunked(3).forEach { rowFilters ->
                         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
                             rowFilters.forEach { filter ->
-                                val selected = scanFilter == filter
+                                val selected = filter in scanFiltersSelected
                                 Surface(
                                     modifier = Modifier.weight(1f).clickable(enabled = !loading) {
-                                        scanFilter = filter
+                                        scanFiltersSelected = if (filter in scanFiltersSelected) scanFiltersSelected - filter else scanFiltersSelected + filter
                                         errorMessage = ""
                                     },
                                     color = if (selected) Color(0xFF123B5A) else SurfaceRaised,
@@ -785,7 +717,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     )
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Очистить", tint = TextMuted) }
                     IconButton(onClick = { showFilters = !showFilters }) {
-                        Icon(Icons.Default.Tune, "Фильтры", tint = if (showFilters || selectedProtocol != "Все протоколы" || selectedCountry != "Все страны") Blue else TextMuted)
+                        Icon(Icons.Default.Tune, "Фильтры", tint = if (showFilters || selectedProtocols.isNotEmpty() || selectedCountry != "Все страны") Blue else TextMuted)
                     }
                 }
             }
@@ -794,7 +726,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(13.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("ФИЛЬТРЫ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                         Text("Протокол", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        FlowChips(items = protocols, selected = selectedProtocol, onSelect = { selectedProtocol = it })
+                        MultiSelectChips(items = protocols, selected = selectedProtocols, onChange = { selectedProtocols = it }, allLabel = "Все протоколы")
                         Text("Страна", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         FlowChips(items = countries, selected = selectedCountry, onSelect = { selectedCountry = it })
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -825,8 +757,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
-                    val verifiedItems = verifiedExportItems.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()
-                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    val verifiedItems = allItems.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Button(
                         onClick = { onBulkShare(verifiedItems) },
                         enabled = verifiedItems.isNotEmpty(),
@@ -838,12 +770,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(19.dp))
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
-                            Text("Передать проверенные в HAPP", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("${verifiedItems.size} подтверждённых туннелей · ${allItems.size} загружено в список", fontSize = 10.sp, color = Color(0xFFACDEC9))
+                            Text("Поделиться конфигурациями", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("${verifiedItems.size} узлов · включая непроверенные", fontSize = 10.sp, color = Color(0xFFACDEC9))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
-                    Text(if (verifiedItems.isEmpty()) "Пока нет подтверждённых туннелей. TCP-ответ сам по себе не считается рабочим прокси." else "В экспорт попадут только уникальные узлы, прошедшие реальный запрос через прокси.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                    Text(if (verifiedItems.isEmpty()) "Пока нет подтверждённых туннелей. TCP-ответ сам по себе не считается рабочим прокси." else "Экспортируются все найденные уникальные конфигурации, включая непроверенные.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
                     }
                 }
             }
@@ -900,120 +832,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
 
 
-}
-
-@Composable
-private fun ServerSettingsPanel(
-    serverEnabled: Boolean,
-    internetEnabled: Boolean,
-    tunnelUrl: String,
-    tunnelStatus: String,
-    localUrl: String,
-    lanUrl: String?,
-    verifiedCount: Int,
-    onServerChange: (Boolean) -> Unit,
-    onInternetChange: (Boolean) -> Unit,
-    onCopy: (String) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF102C48), Color(0xFF101827), Color(0xFF101827))))
-                .padding(17.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.CloudUpload, null, tint = Blue, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.width(9.dp))
-                Text("СЕРВЕР ПОДПИСКИ", color = TextPrimary, fontWeight = FontWeight.Black, fontSize = 15.sp, letterSpacing = 0.8.sp)
-                Spacer(Modifier.weight(1f))
-                Tag(if (serverEnabled) "РАБОТАЕТ" else "ВЫКЛЮЧЕН", if (serverEnabled) Color(0xFF123B30) else SurfaceRaised, if (serverEnabled) Green else TextMuted)
-            }
-            Text("Телефон сам хранит базу и отдаёт HAPP-подписку. Сами конфигурации не загружаются на внешний сервер.", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 16.sp)
-        }
-
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Локальный сервер", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("HTTP · порт 8765 · этот телефон и локальная сеть", color = TextMuted, fontSize = 10.sp)
-                }
-                Switch(checked = serverEnabled, onCheckedChange = onServerChange,
-                    colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
-            }
-            if (serverEnabled) {
-                ServerAddressLine("HAPP на этом телефоне", localUrl, onCopy)
-                if (lanUrl != null) ServerAddressLine("Другие устройства в этой Wi-Fi сети", lanUrl, onCopy)
-                Text("Адрес 127.0.0.1 работает только между приложениями на этом телефоне. LAN-адрес доступен лишь внутри текущей сети.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
-            }
-        }
-
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                .background(Brush.horizontalGradient(listOf(Color(0xFF102A42), Surface)))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Доступ из всего интернета", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Cloudflare Tunnel · публичный HTTPS-адрес", color = TextMuted, fontSize = 10.sp)
-                }
-                Switch(checked = internetEnabled, onCheckedChange = onInternetChange,
-                    colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
-            }
-            Text("Создаёт исходящее защищённое соединение. Не требуется открывать порт на роутере, иметь белый IP или быть в той же Wi-Fi сети.", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 16.sp)
-            Text(
-                if (internetEnabled) tunnelStatus else "Выключено. Включи переключатель для создания публичного адреса.",
-                color = if (internetEnabled && tunnelUrl.isNotBlank()) Green else if (internetEnabled) Amber else TextMuted,
-                fontSize = 11.sp, fontWeight = FontWeight.SemiBold
-            )
-            if (tunnelUrl.isNotBlank()) {
-                ServerAddressLine("ПУБЛИЧНАЯ ССЫЛКА ДЛЯ HAPP", tunnelUrl, onCopy)
-                Text("Ссылка доступна извне, пока включены сервер и туннель. Не публикуй её открыто: секретный токен находится в адресе.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
-            } else if (internetEnabled) {
-                Text("Подключаемся к Cloudflare. Публичная ссылка появится здесь автоматически.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
-            }
-            Text("Сейчас используется временный Quick Tunnel без аккаунта Cloudflare. Адрес меняется при новом запуске. Для постоянного домена понадобится отдельная настройка именованного туннеля и своего домена.", color = Amber, fontSize = 10.sp, lineHeight = 15.sp)
-            Text("Рабочих конфигураций: " + verifiedCount + ". Сервер публикует только узлы, прошедшие проверку HTTPS-туннеля.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp)
-        }
-
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            Text("ПАРАМЕТРЫ РАБОТЫ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-            DetailLine("Порт сервера", "8765")
-            DetailLine("Формат выдачи", "Текстовая HAPP-подписка")
-            DetailLine("Лимит ответа", "До 1 500 уникальных проверенных конфигураций")
-            DetailLine("Защита", "Случайный секретный токен в URL · HTTPS снаружи через Cloudflare")
-            Text("Для длительной работы оставь системное уведомление сервера активным и отключи для приложения агрессивную экономию батареи. Android может завершать фоновые процессы.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
-        }
-    }
-}
-
-@Composable
-private fun ServerAddressLine(title: String, url: String, onCopy: (String) -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(SurfaceRaised).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(title, color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-        Text(url, color = TextPrimary, fontSize = 10.sp, lineHeight = 14.sp)
-        OutlinedButton(
-            onClick = { onCopy(url) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(9.dp),
-            contentPadding = PaddingValues(vertical = 7.dp)
-        ) {
-            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Копировать ссылку", fontSize = 10.sp)
-        }
-    }
 }
 
 @Composable
