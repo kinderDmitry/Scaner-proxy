@@ -74,18 +74,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Bg = Color(0xFF080808)
-private val Surface = Color(0xFF15110E)
-private val SurfaceRaised = Color(0xFF21170F)
-private val Blue = Color(0xFFFF8A24)
-private val BlueDeep = Color(0xFFFF5A12)
-private val Cyan = Color(0xFFFFB45E)
+private val Bg = Color(0xFF070707)
+private val Surface = Color(0xFF101010)
+private val SurfaceRaised = Color(0xFF19130F)
+private val NeonOrange = Color(0xFFFF7A18)
+private val NeonOrangeDeep = Color(0xFFFF4D00)
+private val OrangeSoft = Color(0xFFFFB36B)
 private val Green = Color(0xFF52E6A6)
 private val Amber = Color(0xFFFFC76A)
 private val Red = Color(0xFFFF7189)
-private val TextPrimary = Color(0xFFF4F8FF)
-private val TextMuted = Color(0xFFB59B83)
-private val Line = Color(0xFF51301A)
+private val TextPrimary = Color(0xFFFFF7F0)
+private val TextMuted = Color(0xFFAA9684)
+private val Line = Color(0xFF3B281B)
+
+private fun Modifier.neonPanel(shape: RoundedCornerShape = RoundedCornerShape(18.dp)): Modifier =
+    this.clip(shape)
+        .background(Brush.linearGradient(listOf(SurfaceRaised, Surface, Bg)))
+        .border(BorderStroke(1.dp, Brush.linearGradient(listOf(NeonOrange.copy(alpha = 0.52f), Line, NeonOrange.copy(alpha = 0.12f)))), shape)
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
@@ -104,7 +109,7 @@ class MainActivity : ComponentActivity() {
         repository = ProxyRepository(this)
         setContent {
             val scheme = darkColorScheme(
-                primary = Blue, onPrimary = Color(0xFF03101A), secondary = Cyan,
+                primary = NeonOrange, onPrimary = Color(0xFF1A0B02), secondary = OrangeSoft,
                 background = Bg, onBackground = TextPrimary, surface = Surface,
                 onSurface = TextPrimary, surfaceVariant = SurfaceRaised, onSurfaceVariant = TextMuted,
                 outline = Line, error = Red
@@ -241,7 +246,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    var selectedTab by remember { mutableStateOf("Сканер") }
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
@@ -407,7 +411,16 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             try {
                 val requested = if (scanFiltersSelected.isEmpty()) listOf("Все типы") else scanFiltersSelected.toList()
                 val results = requested.map { filter -> repo.fetch(filter) { name -> withContext(Dispatchers.Main) { sourceProgress = "$filter · $name" } } }
-                val fetched = FetchResult(results.flatMap { it.items }.distinctBy { it.rawConfig.trim() }, results.flatMap { it.sourceCounts.entries }.associate { it.toPair() }, results.flatMap { it.sourceErrors.entries }.associate { it.toPair() })
+                val combinedCounts = results.flatMap { it.sourceCounts.entries }
+                    .groupBy { it.key }
+                    .mapValues { (_, entries) -> entries.sumOf { it.value } }
+                val combinedErrors = results.flatMap { it.sourceErrors.entries }
+                    .associate { it.key to it.value }
+                val fetched = FetchResult(
+                    results.flatMap { it.items }.distinctBy { it.rawConfig.trim() },
+                    combinedCounts,
+                    combinedErrors
+                )
                 val matchedItems = fetched.items
                 val currentItems = allItems
                 val merged = withContext(Dispatchers.Default) {
@@ -500,47 +513,46 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
             item(key = "topbar") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 1.dp)
+                ) {
                     Box(
-                        Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(Blue, BlueDeep))),
+                        Modifier.size(50.dp).clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(NeonOrange, NeonOrangeDeep)))
+                            .border(1.dp, OrangeSoft.copy(alpha = 0.8f), RoundedCornerShape(16.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        androidx.compose.foundation.Image(painter = painterResource(R.drawable.ic_happ_logo), contentDescription = "HAPP Proxy Finder", modifier = Modifier.size(40.dp))
+                        androidx.compose.foundation.Image(
+                            painter = painterResource(R.drawable.ic_happ_logo),
+                            contentDescription = "HAPP Proxy Finder",
+                            modifier = Modifier.size(45.dp)
+                        )
                     }
                     Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
-                        Text("ПОИСК  /  ОТКРЫТЫЕ ПРОКСИ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("HAPP PROXY", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                        Text("SMART PROXY DISCOVERY", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.65.sp)
                     }
-                    Icon(Icons.Default.Refresh, contentDescription = "Сканирование запускается кнопкой ниже", tint = TextMuted.copy(alpha = 0.65f), modifier = Modifier.size(22.dp))
-                }
-            }
-            item(key = "navigationTabs") {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    listOf("Сканер").forEach { tab ->
-                        val selected = selectedTab == tab
-                        Surface(
-                            modifier = Modifier.weight(1f).clickable { selectedTab = tab },
-                            color = if (selected) Color(0xFF123B5A) else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, if (selected) Blue.copy(alpha = 0.55f) else Color.Transparent)
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(vertical = 11.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                                Icon(if (tab == "Сервер") Icons.Default.CloudUpload else Icons.Default.Radar, null, tint = if (selected) Blue else TextMuted, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(7.dp))
-                                Text(tab, color = if (selected) Blue else TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(20.dp))
+                            .background(NeonOrange.copy(alpha = 0.10f))
+                            .border(1.dp, NeonOrange.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 10.dp, vertical = 7.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Default.Radar, null, tint = NeonOrange, modifier = Modifier.size(14.dp))
+                            Text("SCANNER", color = NeonOrange, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
                         }
                     }
                 }
             }
-            if (true) {
             item(key = "hero") {
                 HeroPanel(loading = loading, checkingCount = checkingCount, onScan = { scan() }, enabled = !loading)
             }
             item(key = "backgroundMonitor") {
                 Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(14.dp),
+                    Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(17.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -560,7 +572,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                                 if (enabled) androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
                                 else context.startService(serviceIntent)
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f))
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeonOrange, checkedTrackColor = NeonOrange.copy(alpha = 0.35f))
                         )
                     }
                     Text("Работает при заблокированном экране, но не при полностью выключенном телефоне. Android может ограничивать фоновые задачи.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
@@ -568,7 +580,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "scanMode") {
                 Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Surface).padding(14.dp),
+                    Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(18.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text("ГДЕ ИСКАТЬ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
@@ -589,7 +601,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             singleLine = true,
                             enabled = !loading,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Blue, focusedLabelColor = Blue,
+                                focusedBorderColor = NeonOrange, focusedLabelColor = NeonOrange,
                                 unfocusedBorderColor = Line, focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary
                             )
@@ -602,7 +614,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             singleLine = true,
                             enabled = !loading,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Blue, focusedLabelColor = Blue,
+                                focusedBorderColor = NeonOrange, focusedLabelColor = NeonOrange,
                                 unfocusedBorderColor = Line, focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary
                             )
@@ -610,43 +622,20 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 10.sp, lineHeight = 14.sp)
                     }
                     Text("ВНЕШНИЙ ФИЛЬТР · ПРОТОКОЛЫ ИСТОЧНИКОВ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Text(if (scanFiltersSelected.isEmpty()) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = Blue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(if (scanFiltersSelected.isEmpty()) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = NeonOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 10.sp)
                     val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
-                    scanFilters.chunked(3).forEach { rowFilters ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                            rowFilters.forEach { filter ->
-                                val selected = filter in scanFiltersSelected
-                                Surface(
-                                    modifier = Modifier.weight(1f).clickable(enabled = !loading) {
-                                        scanFiltersSelected = if (filter in scanFiltersSelected) scanFiltersSelected - filter else scanFiltersSelected + filter
-                                        errorMessage = ""
-                                    },
-                                    color = if (selected) Color(0xFF123B5A) else SurfaceRaised,
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, if (selected) Blue else Line)
-                                ) {
-                                    Text(filter, modifier = Modifier.padding(horizontal = 5.dp, vertical = 11.dp),
-                                        color = if (selected) Blue else TextPrimary, fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1)
-                                }
-                            }
-                            repeat(3 - rowFilters.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-                    Button(
-                        onClick = { scan() }, enabled = !loading,
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color(0xFF03101A))
-                    ) {
-                        Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (loading) "Сканирование…" else "Сканировать", fontWeight = FontWeight.Bold)
-                    }
+                    MultiSelectChips(
+                        items = scanFilters,
+                        selected = scanFiltersSelected,
+                        onChange = { scanFiltersSelected = it; errorMessage = "" },
+                        allLabel = "Все типы",
+                        enabled = !loading
+                    )
                 }
             }
             item(key = "localResults") {
-                if (scanScope == "Локальная сеть") {
+                if (scanScope == "Диапазон IP") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Text("РЕЗУЛЬТАТЫ СКАНИРОВАНИЯ IP", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
                         if (!loading && localResults.isEmpty() && errorMessage.isBlank()) {
@@ -659,12 +648,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "autoRefresh") {
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                        .background(Brush.horizontalGradient(listOf(Color(0xFF102A42), Surface)))
+                        .background(Brush.horizontalGradient(listOf(Color(0xFF21150D), Surface)))
                         .padding(horizontal = 14.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF163A55)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Refresh, null, tint = Blue, modifier = Modifier.size(19.dp))
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF35200F)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Refresh, null, tint = NeonOrange, modifier = Modifier.size(19.dp))
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -675,29 +664,29 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         autoRefresh = it
                         context.getSharedPreferences("proxy_finder", 0).edit().putBoolean("auto_refresh_enabled", it).apply()
                     },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Blue, checkedTrackColor = Blue.copy(alpha = 0.35f)))
+                        colors = SwitchDefaults.colors(checkedThumbColor = NeonOrange, checkedTrackColor = NeonOrange.copy(alpha = 0.35f)))
                 }
             }
             item(key = "stats") {
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                    MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), Blue)
+                    MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), NeonOrange)
                     MetricCard("Проверен", allItems.count { it.isTunnelVerified }.toString(), "туннель работает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
-                    MetricCard("Средний ping", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), Cyan)
+                    MetricCard("Средний ping", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), OrangeSoft)
                 }
             }
             item(key = "status") {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).padding(horizontal = 13.dp, vertical = 11.dp),
+                    Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(15.dp)).padding(horizontal = 13.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (loading || geoLoading) Blue else if (errorMessage.isNotBlank()) Amber else Green))
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (loading || geoLoading) NeonOrange else if (errorMessage.isNotBlank()) Amber else Green))
                     Spacer(Modifier.width(9.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(sourceStatus, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text(if (sourceProgress.isNotBlank()) sourceProgress else "Автопроверка отключена или работает с интервалом 15 секунд", color = TextMuted, fontSize = 10.sp)
                     }
                     if (loading || geoLoading) {
-                        CircularProgressIndicator(Modifier.size(19.dp), color = Blue, strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.size(19.dp), color = NeonOrange, strokeWidth = 2.dp)
                     } else {
                         Icon(Icons.Default.CheckCircle, null, tint = Green, modifier = Modifier.size(17.dp))
                     }
@@ -705,7 +694,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "error") {
                 AnimatedVisibility(visible = errorMessage.isNotBlank(), enter = fadeIn() + slideInVertically(), exit = fadeOut() + slideOutVertically()) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF2A2020)).padding(12.dp), verticalAlignment = Alignment.Top) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF281412)).border(1.dp, Red.copy(alpha = 0.28f), RoundedCornerShape(12.dp)).padding(12.dp), verticalAlignment = Alignment.Top) {
                         Icon(Icons.Default.Close, null, tint = Amber, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(errorMessage, color = Color(0xFFFFD7A0), fontSize = 12.sp, lineHeight = 17.sp)
@@ -714,15 +703,15 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "search") {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(SurfaceRaised).padding(start = 13.dp, end = 7.dp),
+                    Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(16.dp)).padding(start = 13.dp, end = 7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Search, null, tint = Blue, modifier = Modifier.size(21.dp))
+                    Icon(Icons.Default.Search, null, tint = NeonOrange, modifier = Modifier.size(21.dp))
                     Spacer(Modifier.width(10.dp))
                     BasicTextField(
                         value = query, onValueChange = { query = it }, singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(color = TextPrimary, fontSize = 14.sp),
-                        cursorBrush = Brush.verticalGradient(listOf(Blue, Cyan)),
+                        cursorBrush = Brush.verticalGradient(listOf(NeonOrange, OrangeSoft)),
                         modifier = Modifier.weight(1f).padding(vertical = 16.dp),
                         decorationBox = { inner -> Box {
                             if (query.isEmpty()) Text("IP, домен, протокол или страна", color = TextMuted, fontSize = 13.sp)
@@ -731,13 +720,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     )
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Очистить", tint = TextMuted) }
                     IconButton(onClick = { showFilters = !showFilters }) {
-                        Icon(Icons.Default.Tune, "Фильтры", tint = if (showFilters || selectedProtocols.isNotEmpty() || selectedCountry != "Все страны") Blue else TextMuted)
+                        Icon(Icons.Default.Tune, "Фильтры", tint = if (showFilters || selectedProtocols.isNotEmpty() || selectedCountry != "Все страны") NeonOrange else TextMuted)
                     }
                 }
             }
             item(key = "filters") {
                 AnimatedVisibility(visible = showFilters, enter = fadeIn(tween(180)) + slideInVertically { -it / 3 }, exit = fadeOut(tween(140)) + slideOutVertically { -it / 3 }) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).padding(13.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(17.dp)).padding(13.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("ФИЛЬТРЫ", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                         Text("Протокол", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         MultiSelectChips(items = protocols, selected = selectedProtocols, onChange = { selectedProtocols = it }, allLabel = "Все протоколы")
@@ -757,10 +746,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     enabled = pendingNative > 0 && !loading && !autoCheckRunning,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF153B58), contentColor = Color(0xFFE5F5FF))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF321A0B), contentColor = Color(0xFFFFE8D1))
                 ) {
-                    if (autoCheckRunning) CircularProgressIndicator(Modifier.size(17.dp), color = Blue, strokeWidth = 2.dp)
-                    else Icon(Icons.Default.NetworkCheck, null, tint = Blue, modifier = Modifier.size(18.dp))
+                    if (autoCheckRunning) CircularProgressIndicator(Modifier.size(17.dp), color = NeonOrange, strokeWidth = 2.dp)
+                    else Icon(Icons.Default.NetworkCheck, null, tint = NeonOrange, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Column(horizontalAlignment = Alignment.Start) {
                         Text(if (autoCheckRunning) "Проверка туннелей…" else "Проверить следующие 48", fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -778,22 +767,22 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         enabled = verifiedItems.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
                         shape = RoundedCornerShape(15.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF174A38), contentColor = Color(0xFFD9FFF0)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF7A18), contentColor = Color(0xFF1A0B02)),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
                     ) {
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(19.dp))
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
                             Text("Поделиться конфигурациями", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("${verifiedItems.size} узлов · включая непроверенные", fontSize = 10.sp, color = Color(0xFFACDEC9))
+                            Text("${verifiedItems.size} узлов · включая непроверенные", fontSize = 10.sp, color = Color(0xFF5C2C0B))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
                     Text("Экспортируются все найденные уникальные конфигурации, включая непроверенные. Проверка и её статус сохраняются отдельно.", color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
                     OutlinedButton(onClick = { onCopyAllJson(verifiedItems) }, enabled = verifiedItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Default.ContentCopy, null, tint = Blue)
+                        Icon(Icons.Default.ContentCopy, null, tint = NeonOrange)
                         Spacer(Modifier.width(8.dp))
-                        Text("Сохранить JSON-файл", color = Blue)
+                        Text("Сохранить JSON-файл", color = NeonOrange)
                     }
                     }
                 }
@@ -804,8 +793,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Результаты", color = TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                         Text("Сначала самые быстрые по задержке", color = TextMuted, fontSize = 11.sp)
                     }
-                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF102B43)).padding(horizontal = 11.dp, vertical = 7.dp)) {
-                        Text("${visible.size} узлов", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF2D180B)).padding(horizontal = 11.dp, vertical = 7.dp)) {
+                        Text("${visible.size} узлов", color = NeonOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -834,7 +823,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             if (displayedItems.size < visible.size) {
                 item(key = "loadMoreCards") {
                     OutlinedButton(onClick = { displayLimit = (displayLimit + 100).coerceAtMost(visible.size) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                        Text("Показать ещё ${minOf(100, visible.size - displayedItems.size)} · осталось ${visible.size - displayedItems.size}", color = Blue)
+                        Text("Показать ещё ${minOf(100, visible.size - displayedItems.size)} · осталось ${visible.size - displayedItems.size}", color = NeonOrange)
                     }
                 }
             }
@@ -845,7 +834,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )
             }
-            }
         }
     }
 
@@ -855,37 +843,85 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
 @Composable
 private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, enabled: Boolean) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF102C48), Color(0xFF0D1829), Color(0xFF111626))))
-            .padding(start = 18.dp, top = 18.dp, bottom = 17.dp, end = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val transition = rememberInfiniteTransition(label = "hero-neon")
+    val glow by transition.animateFloat(
+        initialValue = 0.38f,
+        targetValue = 0.88f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1450, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "radar-glow"
+    )
+
+    Column(
+        Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(24.dp)).padding(17.dp),
+        verticalArrangement = Arrangement.spacedBy(15.dp)
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(if (loading) Blue else Green))
-                Text(if (loading) "СКАНЕР АКТИВЕН" else "ГОТОВ К РАБОТЕ", color = if (loading) Blue else Green, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-            }
-            Text("Найди свой\nбыстрый узел.", color = TextPrimary, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 27.sp)
-            Text("Публичные конфигурации для HAPP", color = Color(0xFFB5C8DD), fontSize = 11.sp)
-            Text("Выбери режим ниже и нажми «Сканировать».", color = Color(0xFFB5C8DD), fontSize = 11.sp, lineHeight = 15.sp)
-        }
-        Box(Modifier.size(124.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(112.dp).clip(CircleShape).background(Blue.copy(alpha = 0.045f)))
-            Box(Modifier.size(94.dp).clip(CircleShape).background(Color(0xFF122A42)), contentAlignment = Alignment.Center) {
-                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                    val stroke = 1.dp.toPx()
-                    drawCircle(color = Blue.copy(alpha = 0.2f), radius = size.minDimension * 0.48f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                    drawCircle(color = Blue.copy(alpha = 0.18f), radius = size.minDimension * 0.31f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                    drawLine(color = Blue.copy(alpha = 0.13f), start = androidx.compose.ui.geometry.Offset(size.width / 2, 0f), end = androidx.compose.ui.geometry.Offset(size.width / 2, size.height), strokeWidth = stroke)
-                    drawLine(color = Blue.copy(alpha = 0.13f), start = androidx.compose.ui.geometry.Offset(0f, size.height / 2), end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2), strokeWidth = stroke)
-                    rotate(28f) {
-                        drawArc(brush = Brush.sweepGradient(listOf(Color.Transparent, Blue.copy(alpha = 0.75f), Color.Transparent)), startAngle = 0f, sweepAngle = 110f, useCenter = true)
-                    }
-                    drawCircle(color = Cyan, radius = 3.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.36f))
-                    drawCircle(color = Green, radius = 2.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.31f, size.height * 0.62f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(if (loading) NeonOrange else Green))
+                    Text(
+                        if (loading) "SCANNER ACTIVE" else "READY TO SCAN",
+                        color = if (loading) NeonOrange else Green,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.35.sp
+                    )
                 }
-                androidx.compose.foundation.Image(painter = painterResource(R.drawable.ic_happ_logo), contentDescription = "HAPP Proxy Finder", modifier = Modifier.size(62.dp))
+                Text("Найди свой\nбыстрый узел.", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Black, lineHeight = 28.sp)
+                Text("Публичные прокси-конфигурации для HAPP", color = TextMuted, fontSize = 11.sp, lineHeight = 16.sp)
+            }
+            Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(108.dp).clip(CircleShape).background(NeonOrange.copy(alpha = 0.035f + glow * 0.045f)))
+                androidx.compose.foundation.Canvas(Modifier.size(100.dp)) {
+                    val stroke = 1.dp.toPx()
+                    val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
+                    drawCircle(color = NeonOrange.copy(alpha = 0.18f + glow * 0.15f), radius = size.minDimension * 0.48f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke * 1.4f))
+                    drawCircle(color = NeonOrange.copy(alpha = 0.12f), radius = size.minDimension * 0.31f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    drawLine(color = NeonOrange.copy(alpha = 0.12f), start = androidx.compose.ui.geometry.Offset(size.width / 2, 0f), end = androidx.compose.ui.geometry.Offset(size.width / 2, size.height), strokeWidth = stroke)
+                    drawLine(color = NeonOrange.copy(alpha = 0.12f), start = androidx.compose.ui.geometry.Offset(0f, size.height / 2), end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2), strokeWidth = stroke)
+                    rotate(28f) {
+                        drawArc(
+                            brush = Brush.sweepGradient(listOf(Color.Transparent, NeonOrange.copy(alpha = glow), Color.Transparent)),
+                            startAngle = 0f,
+                            sweepAngle = 112f,
+                            useCenter = true
+                        )
+                    }
+                    drawCircle(color = OrangeSoft, radius = 3.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.34f))
+                    drawCircle(color = Green, radius = 2.5.dp.toPx(), center = androidx.compose.ui.geometry.Offset(size.width * 0.31f, size.height * 0.63f))
+                    drawCircle(color = NeonOrange.copy(alpha = 0.8f), radius = 2.dp.toPx(), center = center)
+                }
+                androidx.compose.foundation.Image(painter = painterResource(R.drawable.ic_happ_logo), contentDescription = null, modifier = Modifier.size(51.dp))
+            }
+        }
+        Button(
+            onClick = onScan,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            shape = RoundedCornerShape(15.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NeonOrange,
+                contentColor = Color(0xFF1A0B02),
+                disabledContainerColor = SurfaceRaised,
+                disabledContentColor = TextMuted
+            ),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = Color(0xFF1A0B02), strokeWidth = 2.dp)
+            else Icon(Icons.Default.Radar, null, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.width(9.dp))
+            Text(if (loading) "Сканирование выполняется…" else "ЗАПУСТИТЬ СКАНИРОВАНИЕ", fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Tune, null, tint = NeonOrange, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Режим и внешние протоколы настраиваются ниже", color = TextMuted, fontSize = 10.sp)
+            if (loading && checkingCount > 0) {
+                Spacer(Modifier.weight(1f))
+                Text("$checkingCount", color = NeonOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -894,7 +930,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
 @Composable
 private fun LocalEndpointCard(endpoint: OpenEndpoint) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Surface).padding(13.dp),
+        Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(15.dp)).padding(13.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -902,12 +938,12 @@ private fun LocalEndpointCard(endpoint: OpenEndpoint) {
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(endpoint.host + ":" + endpoint.port, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                Text("Источник: Локальная сеть", color = TextMuted, fontSize = 10.sp)
+                Text("Источник: диапазон IP", color = TextMuted, fontSize = 10.sp)
             }
-            Text("TCP " + endpoint.latencyMs + " мс", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("TCP " + endpoint.latencyMs + " мс", color = OrangeSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Tag(endpoint.protocol, if (endpoint.protocol == "TCP") Color(0xFF3A2B1B) else Color(0xFF133853), if (endpoint.protocol == "TCP") Amber else Blue)
+            Tag(endpoint.protocol, if (endpoint.protocol == "TCP") Color(0xFF3A2B1B) else Color(0xFF2D1B0E), if (endpoint.protocol == "TCP") Amber else NeonOrange)
             Text(endpoint.status, color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1f))
         }
     }
@@ -916,7 +952,7 @@ private fun LocalEndpointCard(endpoint: OpenEndpoint) {
 @Composable
 private fun MetricCard(title: String, value: String, caption: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, accent: Color) {
     Column(
-        modifier.clip(RoundedCornerShape(17.dp)).background(Surface).padding(horizontal = 11.dp, vertical = 12.dp),
+        modifier.neonPanel(RoundedCornerShape(17.dp)).padding(horizontal = 11.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -931,17 +967,17 @@ private fun MetricCard(title: String, value: String, caption: String, icon: andr
 }
 
 @Composable
-private fun MultiSelectChips(items: List<String>, selected: Set<String>, onChange: (Set<String>) -> Unit, allLabel: String) {
+private fun MultiSelectChips(items: List<String>, selected: Set<String>, onChange: (Set<String>) -> Unit, allLabel: String, enabled: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-            FilterChip(selected = selected.isEmpty(), onClick = { onChange(emptySet()) }, label = { Text(allLabel) })
-            FilterChip(selected = selected.size == items.size, onClick = { onChange(if (selected.size == items.size) emptySet() else items.toSet()) }, label = { Text("Выбрать все") })
+            FilterChip(selected = selected.isEmpty(), enabled = enabled, onClick = { onChange(emptySet()) }, label = { Text(allLabel) }, colors = FilterChipDefaults.filterChipColors(containerColor = SurfaceRaised, labelColor = TextMuted, selectedContainerColor = NeonOrange.copy(alpha = 0.15f), selectedLabelColor = NeonOrange))
+            FilterChip(selected = selected.size == items.size, enabled = enabled, onClick = { onChange(if (selected.size == items.size) emptySet() else items.toSet()) }, label = { Text("Выбрать все") }, colors = FilterChipDefaults.filterChipColors(containerColor = SurfaceRaised, labelColor = TextMuted, selectedContainerColor = NeonOrange.copy(alpha = 0.15f), selectedLabelColor = NeonOrange))
         }
         items.chunked(3).forEach { rowItems ->
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
                 rowItems.forEach { item ->
                     val active = item in selected
-                    FilterChip(selected = active, onClick = { onChange(if (active) selected - item else selected + item) }, label = { Text(item, maxLines = 1) }, modifier = Modifier.weight(1f))
+                    FilterChip(selected = active, enabled = enabled, onClick = { onChange(if (active) selected - item else selected + item) }, label = { Text(item, maxLines = 1) }, modifier = Modifier.weight(1f), colors = FilterChipDefaults.filterChipColors(containerColor = SurfaceRaised, labelColor = TextMuted, selectedContainerColor = NeonOrange.copy(alpha = 0.15f), selectedLabelColor = NeonOrange))
                 }
                 repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
             }
@@ -956,13 +992,13 @@ private fun FlowChips(items: List<String>, selected: String, onSelect: (String) 
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 rowItems.forEach { item ->
                     val active = item == selected
-                    val bg by animateColorAsState(if (active) Color(0xFF123B5A) else SurfaceRaised, label = "chip-bg")
+                    val bg by animateColorAsState(if (active) NeonOrange.copy(alpha = 0.14f) else SurfaceRaised, label = "chip-bg")
                     Surface(
                         modifier = Modifier.weight(1f).clickable { onSelect(item) },
                         color = bg, shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, if (active) Blue.copy(alpha = 0.65f) else Line)
+                        border = BorderStroke(1.dp, if (active) NeonOrange.copy(alpha = 0.65f) else Line)
                     ) {
-                        Text(item, color = if (active) Blue else TextMuted, fontSize = 10.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        Text(item, color = if (active) NeonOrange else TextMuted, fontSize = 10.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp))
                     }
                 }
@@ -981,18 +1017,17 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
         else -> Line
     }
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(19.dp)).background(Surface)
-            .then(Modifier).padding(0.dp)
+        Modifier.fillMaxWidth().neonPanel(RoundedCornerShape(20.dp))
     ) {
         Column(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(borderColor.copy(alpha = 0.08f), Color.Transparent))).padding(14.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF17273B)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Public, null, tint = if (item.isTunnelVerified) Green else Blue, modifier = Modifier.size(20.dp))
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF25170D)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Public, null, tint = if (item.isTunnelVerified) Green else NeonOrange, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(item.title.ifBlank { item.protocol }, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${item.host}:${item.port}", color = Color(0xFFB3C5DB), fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${item.host}:${item.port}", color = TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = onFavorite, modifier = Modifier.size(32.dp)) {
                     Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "В избранное", tint = if (item.favorite) Red else TextMuted, modifier = Modifier.size(19.dp))
@@ -1000,8 +1035,8 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Tag(item.protocol.uppercase(), Color(0xFF133853), Blue)
-                Tag("${countryFlag(item.countryCode)} ${item.country.ifBlank { "Страна не определена" }}", Color(0xFF1A2D2A), Green)
+                Tag(item.protocol.uppercase(), NeonOrange.copy(alpha = 0.12f), NeonOrange)
+                Tag("${countryFlag(item.countryCode)} ${item.country.ifBlank { "Страна не определена" }}", Green.copy(alpha = 0.10f), Green)
                 Spacer(Modifier.weight(1f))
                 val statusColor = if (item.isTunnelVerified) Green else if (item.checkStatus == "TCP недоступен") Red else Amber
                 Box(Modifier.size(6.dp).clip(CircleShape).background(statusColor))
@@ -1023,16 +1058,16 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                     Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Передать", fontSize = 11.sp, maxLines = 1)
                 }
                 OutlinedButton(onClick = onCheck, enabled = item.supportsNativeTunnelCheck, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
-                    Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = if (item.supportsNativeTunnelCheck) Blue else Amber); Spacer(Modifier.width(5.dp)); Text(if (item.supportsNativeTunnelCheck) "Проверить" else "Нужен core", fontSize = 10.sp, maxLines = 1, color = TextPrimary)
+                    Icon(Icons.Default.NetworkCheck, null, modifier = Modifier.size(15.dp), tint = if (item.supportsNativeTunnelCheck) NeonOrange else Amber); Spacer(Modifier.width(5.dp)); Text(if (item.supportsNativeTunnelCheck) "Проверить" else "Нужен core", fontSize = 10.sp, maxLines = 1, color = TextPrimary)
                 }
                 IconButton(onClick = onCopy, modifier = Modifier.size(39.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised)) {
-                    Icon(Icons.Default.ContentCopy, "Копировать ссылку", tint = Blue, modifier = Modifier.size(17.dp))
+                    Icon(Icons.Default.ContentCopy, "Копировать ссылку", tint = NeonOrange, modifier = Modifier.size(17.dp))
                 }
             }
             Spacer(Modifier.height(7.dp))
             Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
                 Text(if (expanded) "Скрыть детали" else "Детали проверки", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1f))
-                Text(if (expanded) "−" else "+", color = Blue, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(if (expanded) "−" else "+", color = NeonOrange, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             AnimatedVisibility(visible = expanded, enter = fadeIn(tween(160)) + slideInVertically { -it / 4 }, exit = fadeOut(tween(100))) {
                 Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1080,15 +1115,15 @@ private fun DetailLine(label: String, value: String) {
 @Composable
 private fun EmptyState(loading: Boolean, onScan: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().padding(vertical = 30.dp).clip(RoundedCornerShape(22.dp)).background(Surface).padding(24.dp),
+        Modifier.fillMaxWidth().padding(vertical = 30.dp).neonPanel(RoundedCornerShape(22.dp)).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFF142A41)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Search, null, tint = Blue, modifier = Modifier.size(29.dp))
+        Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFF2A190E)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Search, null, tint = NeonOrange, modifier = Modifier.size(29.dp))
         }
         Text(if (loading) "Ищем конфигурации" else "Пока ничего не найдено", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Text(if (loading) "Загружаем источники и проверяем узлы. Это может занять немного времени." else "Запусти сканирование или измени параметры фильтра.", color = TextMuted, fontSize = 12.sp, lineHeight = 18.sp)
-        if (!loading) OutlinedButton(onClick = onScan, shape = RoundedCornerShape(12.dp)) { Text("Повторить поиск", color = Blue) }
+        if (!loading) OutlinedButton(onClick = onScan, shape = RoundedCornerShape(12.dp)) { Text("Повторить поиск", color = NeonOrange) }
     }
 }
 
