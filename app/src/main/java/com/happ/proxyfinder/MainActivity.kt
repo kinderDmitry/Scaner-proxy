@@ -207,6 +207,9 @@ internal fun normalizeProxySchemeForHapp(config: String): String {
     return value.replace(Regex("^socks5://", RegexOption.IGNORE_CASE), "socks://")
 }
 
+/** Returns a clean, HAPP-compatible configuration string for single-item copy actions. */
+internal fun namedConfigForImport(item: ProxyItem): String = normalizeProxySchemeForHapp(item.rawConfig)
+
 @Composable
 private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
