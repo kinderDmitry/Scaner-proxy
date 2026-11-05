@@ -201,7 +201,7 @@ class MainActivity : ComponentActivity() {
 }
 
 internal fun normalizeProxySchemeForHapp(config: String): String {
-    val value = config.trim().removePrefix("\uFEFF")
+    val value = config.removePrefix("\uFEFF").trim()
     if (value.isEmpty()) return value
     // HAPP uses socks:// for SOCKS5. Preserve endpoint and authentication verbatim.
     return value.replace(Regex("^socks5://", RegexOption.IGNORE_CASE), "socks://")
