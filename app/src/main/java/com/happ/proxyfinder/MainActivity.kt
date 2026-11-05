@@ -454,11 +454,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
     val displayedItems = remember(visible, displayLimit) { visible.take(displayLimit) }
 
-    Column(Modifier.fillMaxSize().background(Bg)) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF120A05), Bg, Color(0xFF050607))))) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 30.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
             item(key = "topbar") {
