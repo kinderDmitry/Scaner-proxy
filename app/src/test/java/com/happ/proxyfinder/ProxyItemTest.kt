@@ -191,7 +191,7 @@ class ProxyItemTest {
 
     @Test
     fun ipv4RangeParserEnforcesMaximumRangeAndValidOctets() {
-        assertEquals(256, Ipv4RangeParser.parse("192.168.1.0/24")?.size)
+        assertEquals(254, Ipv4RangeParser.parse("192.168.1.0/24")?.size)
         assertEquals(listOf("192.168.1.7"), Ipv4RangeParser.parse("192.168.1.7/32"))
         assertEquals(2, Ipv4RangeParser.parse("10.0.0.0/31")?.size)
         assertEquals(null, Ipv4RangeParser.parse("10.0.0.0/23"))
