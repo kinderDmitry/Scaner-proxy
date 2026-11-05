@@ -168,16 +168,17 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this, "Конфигурация скопирована", Toast.LENGTH_SHORT).show()
                         },
                         onBulkShare = { items ->
-                            val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
+                            val unique = items.distinctBy { it.rawConfig.trim() }
+                                .filter { it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", true) }
                             if (unique.isNotEmpty()) {
-                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.filterNot { it.protocol.equals("SOCKS4", true) }.joinToString("\n") { normalizeProxySchemeForHapp(it.rawConfig) }
+                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.joinToString("\n") { normalizeProxySchemeForHapp(it.rawConfig) }
                                 val send = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, payload)
                                     putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${unique.size} конфигураций")
                                 }
                                 startActivity(Intent.createChooser(send, "Передать ${unique.size} прокси"))
-                            } else Toast.makeText(this, "Нет конфигураций для передачи.", Toast.LENGTH_LONG).show()
+                            } else Toast.makeText(this, "Нет поддерживаемых для HAPP конфигураций: SOCKS4 исключён.", Toast.LENGTH_LONG).show()
                         },
                         onCopyAllJson = { items ->
                             val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
