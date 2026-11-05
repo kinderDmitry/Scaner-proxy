@@ -732,6 +732,7 @@ internal object ConfigParser {
                     json.optString("add") to json.optString("port").toIntOrNull()
                 }
                 "ss" -> parseShadowsocksEndpoint(line.substringAfter("ss://"))
+                "socks", "socks5", "socks4" -> parseSocksEndpoint(line.substringAfter("://"))
                 else -> {
                     val uri = URI(line)
                     val host = uri.host ?: run {
@@ -842,6 +843,55 @@ internal object ConfigParser {
     private fun countryName(code: String): String {
         val name = Locale("", code).getDisplayCountry(Locale("ru"))
         return name.takeIf { it.isNotBlank() } ?: code
+    }
+
+    /**
+     * Happ accepts SOCKS links as socks://user:pass@host:port, with Base64-encoded
+     * credentials before @, or with the complete authority encoded as Base64.
+     * The last form must be decoded before extracting host/port; treating the
+     * encoded token as a hostname produces an invalid proxy record.
+     */
+    private fun parseSocksEndpoint(rawPayload: String, allowBase64Decode: Boolean = true): Pair<String, Int>? {
+        val payload = rawPayload.trim().substringBefore('#').substringBefore('?')
+        if (payload.isBlank()) return null
+
+        fun parseAuthority(value: String): Pair<String, Int>? {
+            val authority = value.substringAfterLast('@').trim()
+            if (authority.isBlank()) return null
+            val uri = runCatching { URI("socks://$value") }.getOrNull()
+            val uriHost = uri?.host?.takeIf { it.isNotBlank() }
+            val uriPort = uri?.port?.takeIf { it in 1..65535 }
+            if (uriHost != null && uriPort != null) return uriHost to uriPort
+
+            val host: String
+            val port: Int
+            if (authority.startsWith("[")) {
+                val close = authority.indexOf(']')
+                if (close <= 1 || authority.getOrNull(close + 1) != ':') return null
+                host = authority.substring(1, close)
+                port = authority.substring(close + 2).toIntOrNull() ?: return null
+            } else {
+                val separator = authority.lastIndexOf(':')
+                if (separator <= 0) return null
+                host = authority.substring(0, separator)
+                port = authority.substring(separator + 1).toIntOrNull() ?: return null
+            }
+            return host.takeIf { it.isNotBlank() }?.let { it to port }
+        }
+
+        parseAuthority(payload)?.let { (host, port) ->
+            if (port in 1..65535 && host.length <= 253) return host to port
+        }
+
+        if (!allowBase64Decode || payload.contains('@') || payload.contains(':')) return null
+        val decoded = runCatching {
+            val normalized = payload.replace('-', '+').replace('_', '/')
+            val padded = normalized + "=".repeat((4 - normalized.length % 4) % 4)
+            String(java.util.Base64.getDecoder().decode(padded), Charsets.UTF_8).trim()
+        }.getOrNull() ?: return null
+        if (decoded.isBlank() || decoded == payload || decoded.any { it.isISOControl() }) return null
+        val authority = decoded.removePrefix("socks://").removePrefix("socks5://")
+        return parseSocksEndpoint(authority, allowBase64Decode = false)
     }
 
     private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
