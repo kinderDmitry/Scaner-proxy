@@ -879,7 +879,11 @@ internal object Ipv4RangeParser {
         val count = 1 shl hostBits
         val mask = (0xFFFF_FFFFL shl hostBits) and 0xFFFF_FFFFL
         val network = base and mask
-        return (0 until count).map { offset -> longToIpv4(network + offset) }
+        // Exclude network and broadcast addresses for ordinary subnets.
+        // /31 point-to-point and /32 host routes have no broadcast address to skip.
+        val firstHost = if (prefix <= 30) network + 1 else network
+        val lastHostExclusive = if (prefix <= 30) network + count - 1 else network + count
+        return (firstHost until lastHostExclusive).map(::longToIpv4)
     }
 
     private fun ipv4ToLong(value: String): Long? {
