@@ -188,4 +188,58 @@ class ProxyItemTest {
         assertFalse(proxy.isTcpReachable)
         assertEquals(0, proxy.qualityScore)
     }
+
+    @Test
+    fun ipv4RangeParserEnforcesMaximumRangeAndValidOctets() {
+        assertEquals(256, Ipv4RangeParser.parse("192.168.1.0/24")?.size)
+        assertEquals(listOf("192.168.1.7"), Ipv4RangeParser.parse("192.168.1.7/32"))
+        assertEquals(2, Ipv4RangeParser.parse("10.0.0.0/31")?.size)
+        assertEquals(null, Ipv4RangeParser.parse("10.0.0.0/23"))
+        assertEquals(null, Ipv4RangeParser.parse("10.0.0.0/33"))
+        assertEquals(null, Ipv4RangeParser.parse("256.0.0.1/32"))
+        assertEquals(null, Ipv4RangeParser.parse("10.0.0/24"))
+        assertEquals(null, Ipv4RangeParser.parse("not-an-ip"))
+    }
+
+    @Test
+    fun parserRejectsCommentsMalformedEndpointsAndUnsupportedSchemes() {
+        assertEquals(null, ConfigParser.parseConfig(""))
+        assertEquals(null, ConfigParser.parseConfig("# subscription comment"))
+        assertEquals(null, ConfigParser.parseConfig("// comment"))
+        assertEquals(null, ConfigParser.parseConfig("socks5://proxy.example:0"))
+        assertEquals(null, ConfigParser.parseConfig("socks5://proxy.example:65536"))
+        assertEquals(null, ConfigParser.parseConfig("socks5://:1080"))
+        assertEquals(null, ConfigParser.parseConfig("ftp://proxy.example:21"))
+        assertEquals(null, ConfigParser.parseConfig("socks5://proxy.example"))
+    }
+
+    @Test
+    fun parserSupportsIpv6ProxyAuthorities() {
+        val parsed = ConfigParser.parseConfig("socks5://user:pass@[2001:db8::1]:1080")
+        assertEquals("2001:db8::1", parsed?.host)
+        assertEquals(1080, parsed?.port)
+        assertEquals("SOCKS5", parsed?.protocol)
+    }
+
+    @Test
+    fun happNormalizerRemovesBomAndWhitespaceButDoesNotRewriteOtherSchemes() {
+        assertEquals("socks://127.0.0.1:1080", normalizeProxySchemeForHapp("\uFEFF  SOCKS5://127.0.0.1:1080  "))
+        assertEquals("socks4://127.0.0.1:1080", normalizeProxySchemeForHapp("  socks4://127.0.0.1:1080  "))
+        assertEquals("", normalizeProxySchemeForHapp("  "))
+    }
+
+    @Test
+    fun qualityScoreUsesOnlyVerifiedTunnelLatencyAndStableThresholds() {
+        fun verified(latency: Int) = item("Проверен через generate_204 · HTTP 204", latency).qualityScore
+        assertEquals(90, verified(99))
+        assertEquals(80, verified(100))
+        assertEquals(80, verified(249))
+        assertEquals(65, verified(250))
+        assertEquals(65, verified(499))
+        assertEquals(45, verified(500))
+        assertEquals(45, verified(899))
+        assertEquals(25, verified(900))
+        assertEquals(0, item("TCP доступен · tunnel not verified", 20).qualityScore)
+    }
+
 }
