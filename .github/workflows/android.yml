@@ -12,6 +12,16 @@ on:
       - 'gradle.properties'
       - 'README.md'
 
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - '**.kt'
+      - '**.kts'
+      - '**.xml'
+      - '**.yml'
+      - 'gradle.properties'
+      - 'README.md'
+
 permissions:
   contents: read
 
