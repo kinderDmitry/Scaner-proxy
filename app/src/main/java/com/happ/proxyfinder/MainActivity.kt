@@ -479,7 +479,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     val protocols = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
     val countries = remember(allItems) { listOf("Все страны") + allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
     val visible = remember(allItems, query, selectedProtocols, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
-        val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}
+        val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}"
         (query.isBlank() || haystack.contains(query, true)) &&
             (selectedProtocols.isEmpty() || selectedProtocols.any { item.protocol.equals(it, true) }) &&
             (selectedCountry == "Все страны" || item.country == selectedCountry) &&
