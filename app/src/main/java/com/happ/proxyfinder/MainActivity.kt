@@ -230,6 +230,16 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var backgroundMonitor by remember {
         mutableStateOf(context.getSharedPreferences("proxy_finder", 0).getBoolean("background_monitor_enabled", false))
     }
+    DisposableEffect(context) {
+        val preferences = context.getSharedPreferences("proxy_finder", 0)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "background_monitor_enabled") {
+                backgroundMonitor = preferences.getBoolean("background_monitor_enabled", false)
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     var scanFiltersSelected by remember { mutableStateOf(setOf<String>()) }
     var scanScope by remember { mutableStateOf("Весь мир") }
     var targetRange by remember { mutableStateOf("192.168.1.0/24") }
@@ -551,7 +561,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             colors = SwitchDefaults.colors(checkedThumbColor = AccentCyan, checkedTrackColor = AccentCyan.copy(alpha = 0.35f))
                         )
                     }
-                    Text("Работает при заблокированном экране, но не при полностью выключенном телефоне. Android может ограничивать фоновые задачи.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
+                    Text("Работает при заблокированном экране. На Android 15+ система ограничивает длительную фоновую проверку шестью часами за 24 часа; после лимита сервис остановится безопасно.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
                 }
             }
             item(key = "scanMode") {

@@ -43,11 +43,11 @@ class SpeedMonitorService : Service() {
         if (job?.isActive != true) job = scope.launch {
             while (true) {
                 try {
-                    val batch = repo.loadSnapshot().sortedBy { it.checkedAt ?: 0L }.take(48)
+                    val batch = repo.loadSnapshot(5000).sortedBy { it.checkedAt ?: 0L }.take(48)
                     if (batch.isNotEmpty()) {
                         val checked = repo.checkBatch(batch) { }
                         val checkedById = checked.associateBy { it.id }
-                        val latest = repo.loadSnapshot()
+                        val latest = repo.loadSnapshot(5000)
                         repo.saveSnapshot(latest.map { checkedById[it.id] ?: it })
                         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Обновлено: ${checked.size} прокси · следующий цикл через 5 минут"))
                     } else {
@@ -61,6 +61,16 @@ class SpeedMonitorService : Service() {
         }
         return START_STICKY
     }
+
+    /** Android 15 limits dataSync foreground services to six hours per 24-hour window. */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        getSharedPreferences("proxy_finder", MODE_PRIVATE).edit()
+            .putBoolean("background_monitor_enabled", false).apply()
+        job?.cancel()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf(startId)
+    }
+
     private fun notification(text: String): Notification = NotificationCompat.Builder(this, CHANNEL)
         .setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("HAPP Proxy Finder")
         .setContentText(text).setOngoing(true).setOnlyAlertOnce(true).build()
