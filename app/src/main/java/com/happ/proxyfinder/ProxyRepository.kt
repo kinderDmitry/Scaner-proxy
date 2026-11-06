@@ -173,24 +173,26 @@ class ProxyRepository(private val context: Context) {
         val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val gate = Semaphore(16)
-        coroutineScope {
-            tasks.map { (ip, port) -> async {
-                gate.withPermit {
-                    val started = System.nanoTime()
-                    val open = runCatching {
-                        Socket().use { socket ->
-                            socket.tcpNoDelay = true
-                            socket.connect(InetSocketAddress(ip, port), 900)
+        tasks.chunked(128).forEach { chunk ->
+            coroutineScope {
+                chunk.map { (ip, port) -> async {
+                    gate.withPermit {
+                        val started = System.nanoTime()
+                        val open = runCatching {
+                            Socket().use { socket ->
+                                socket.tcpNoDelay = true
+                                socket.connect(InetSocketAddress(ip, port), 900)
+                            }
+                            true
+                        }.getOrDefault(false)
+                        val count = completed.incrementAndGet()
+                        if (open) {
+                            found.add(OpenEndpoint(ip, port, ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)))
                         }
-                        true
-                    }.getOrDefault(false)
-                    val count = completed.incrementAndGet()
-                    if (open) {
-                        found.add(OpenEndpoint(ip, port, ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)))
+                        if (count % 12 == 0 || count == tasks.size) onProgress("Проверено $count из ${tasks.size} адресов/портов · открыто ${found.size}")
                     }
-                    if (count % 12 == 0 || count == tasks.size) onProgress("Проверено $count из ${tasks.size} адресов/портов · открыто ${found.size}")
-                }
-            } }.awaitAll()
+                } }.awaitAll()
+            }
         }
         EndpointScanResult(found.sortedWith(compareBy<OpenEndpoint> { it.latencyMs }.thenBy { it.host }.thenBy { it.port }),
             "Завершено: ${tasks.size} проверок · открыто ${found.size} TCP-портов. Это не подтверждает наличие прокси или рабочий туннель.")
@@ -250,16 +252,18 @@ class ProxyRepository(private val context: Context) {
         val found = java.util.concurrent.ConcurrentLinkedQueue<OpenEndpoint>()
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val gate = Semaphore(72)
-        coroutineScope {
-            tasks.map { (ip, port) -> async {
-                gate.withPermit {
-                    probeLocalEndpoint(ip, port, wifiNetwork)?.let(found::add)
-                    val count = completed.incrementAndGet()
-                    if (count % 100 == 0 || count == tasks.size) {
-                        onProgress("Локальная сеть: проверено $count/${tasks.size} адресов и портов · найдено ${found.size}")
+        tasks.chunked(128).forEach { chunk ->
+            coroutineScope {
+                chunk.map { (ip, port) -> async {
+                    gate.withPermit {
+                        probeLocalEndpoint(ip, port, wifiNetwork)?.let(found::add)
+                        val count = completed.incrementAndGet()
+                        if (count % 100 == 0 || count == tasks.size) {
+                            onProgress("Локальная сеть: проверено $count/${tasks.size} адресов и портов · найдено ${found.size}")
+                        }
                     }
-                }
-            } }.awaitAll()
+                } }.awaitAll()
+            }
         }
         val sorted = found.sortedWith(compareBy<OpenEndpoint> { it.protocol == "TCP" }.thenBy { it.latencyMs }.thenBy { it.host }.thenBy { it.port })
         val summary = if (sorted.isEmpty()) {
@@ -709,10 +713,12 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
 }
 
 internal object ConfigParser {
+    private val schemeRegex = Regex("^(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://", RegexOption.IGNORE_CASE)
+
     fun parseConfig(rawLine: String, sourceName: String = "Источник"): ProxyItem? {
         val line = rawLine.trim().removePrefix("\uFEFF")
         if (line.isBlank() || line.startsWith("#") || line.startsWith("//")) return null
-        val match = Regex("^(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://", RegexOption.IGNORE_CASE).find(line) ?: return null
+        val match = schemeRegex.find(line) ?: return null
         val scheme = match.groupValues[1].lowercase(Locale.ROOT)
         val protocol = when (scheme) {
             "hy2", "hysteria2" -> "Hysteria2"
@@ -1007,5 +1013,19 @@ data class ProxyItem(
             latencyMs < 900 -> 45
             else -> 25
         }
+    }
+}
+
+
+/** Merge geolocation updates into the complete in-memory list without dropping unqueried proxies. */
+internal fun mergeResolvedGeoResults(original: List<ProxyItem>, resolved: List<ProxyItem>): List<ProxyItem> {
+    val byHost = resolved.associateBy { it.host }
+    return original.map { item ->
+        val geo = byHost[item.host] ?: return@map item
+        item.copy(
+            country = item.country.ifBlank { geo.country },
+            countryCode = item.countryCode.ifBlank { geo.countryCode },
+            city = item.city.ifBlank { geo.city }
+        )
     }
 }

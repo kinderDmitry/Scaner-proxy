@@ -242,4 +242,46 @@ class ProxyItemTest {
         assertEquals(0, item("TCP доступен · tunnel not verified", 20).qualityScore)
     }
 
+
+    @Test
+    fun happSocksParserAcceptsPlainPartialBase64AndFullBase64Formats() {
+        val plain = ConfigParser.parseConfig("socks://user:pass@192.0.2.10:1080")
+        assertEquals("SOCKS5", plain?.protocol)
+        assertEquals("192.0.2.10", plain?.host)
+        assertEquals(1080, plain?.port)
+
+        val partial = ConfigParser.parseConfig("socks://dXNlcjpwYXNz@192.0.2.11:1080#Partial")
+        assertEquals("192.0.2.11", partial?.host)
+        assertEquals(1080, partial?.port)
+
+        val encodedAuthority = java.util.Base64.getEncoder().encodeToString(
+            "user:pass@192.0.2.12:1080".toByteArray(Charsets.UTF_8)
+        )
+        val full = ConfigParser.parseConfig("socks://$encodedAuthority")
+        assertEquals("192.0.2.12", full?.host)
+        assertEquals(1080, full?.port)
+    }
+
+    @Test
+    fun geoMergePreservesEveryProxyAndExistingMetadata() {
+        fun proxy(id: String, host: String, country: String = "", code: String = "", city: String = "") =
+            ProxyItem(id, host, 1080, "SOCKS5", "test", "socks://$host:1080", country = country, countryCode = code, city = city)
+        val original = listOf(
+            proxy("a", "192.0.2.1", country = "Россия", code = "RU"),
+            proxy("b", "192.0.2.2"),
+            proxy("c", "192.0.2.3")
+        )
+        val resolved = listOf(
+            proxy("a", "192.0.2.1", country = "Россия", code = "RU", city = "Москва"),
+            proxy("c", "192.0.2.3", country = "Германия", code = "DE", city = "Берлин")
+        )
+        val merged = mergeResolvedGeoResults(original, resolved)
+        assertEquals(3, merged.size)
+        assertEquals(listOf("a", "b", "c"), merged.map { it.id })
+        assertEquals("RU", merged[0].countryCode)
+        assertEquals("Москва", merged[0].city)
+        assertEquals("", merged[1].country)
+        assertEquals("Берлин", merged[2].city)
+    }
+
 }
