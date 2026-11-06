@@ -284,4 +284,18 @@ class ProxyItemTest {
         assertEquals("Берлин", merged[2].city)
     }
 
+
+    @Test
+    fun proxyCredentialsDecodePlainPartialAndFullBase64WithoutChangingPlusSigns() {
+        assertEquals("user" to "pass", parseProxyCredentials("socks://user:pass@192.0.2.10:1080"))
+        assertEquals("user" to "pass", parseProxyCredentials("socks://dXNlcjpwYXNz@192.0.2.11:1080#Partial"))
+
+        val full = java.util.Base64.getEncoder().encodeToString(
+            "user:pass@192.0.2.12:1080".toByteArray(Charsets.UTF_8)
+        )
+        assertEquals("user" to "pass", parseProxyCredentials("socks://$full"))
+
+        assertEquals("user+tag" to "p+ass", parseProxyCredentials("socks://user+tag:p+ass@192.0.2.13:1080"))
+    }
+
 }

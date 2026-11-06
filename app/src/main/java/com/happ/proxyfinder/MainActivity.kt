@@ -253,7 +253,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         while (true) {
             delay(15_000)
             if (autoRefresh && !loading && !autoCheckRunning && allItems.isNotEmpty()) {
-                val candidates = allItems.asSequence().filter { it.needsNativeTunnelCheck }.take(48).toList().ifEmpty { allItems.filter { it.isTunnelVerified }.take(48) }
+                val candidates = allItems.filter { it.needsNativeTunnelCheck }.ifEmpty { allItems.filter { it.isTunnelVerified } }
                 if (candidates.isEmpty()) continue
                 val candidate = candidates[cursor % candidates.size]
                 cursor = (cursor + 1) % candidates.size
@@ -329,7 +329,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     fun scan() {
         if (loading) return
         val scanAllProtocols = scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10
-        selectedProtocols = if (scanAllProtocols) emptySet() else scanFiltersSelected
+        if (scanScope == "Весь мир") selectedProtocols = if (scanAllProtocols) emptySet() else scanFiltersSelected
         loading = true
         errorMessage = ""
         if (scanScope == "Диапазон IP") {
@@ -382,18 +382,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         sourceProgress = "Подготовка"
         scope.launch {
             try {
-                val requested = if (scanAllProtocols) listOf("Все типы") else scanFiltersSelected.toList()
-                val results = requested.map { filter -> repo.fetch(filter) { name -> withContext(Dispatchers.Main) { sourceProgress = "$filter · $name" } } }
-                val combinedCounts = results.flatMap { it.sourceCounts.entries }
-                    .groupBy { it.key }
-                    .mapValues { (_, entries) -> entries.sumOf { it.value } }
-                val combinedErrors = results.flatMap { it.sourceErrors.entries }
-                    .associate { it.key to it.value }
-                val fetched = FetchResult(
-                    results.flatMap { it.items }.distinctBy { it.rawConfig.trim() },
-                    combinedCounts,
-                    combinedErrors
-                )
+                val requested = if (scanAllProtocols) emptySet() else scanFiltersSelected
+                val fetched = repo.fetch(requested) { name ->
+                    withContext(Dispatchers.Main) {
+                        sourceProgress = if (scanAllProtocols) "Все протоколы · $name" else "Выбранные протоколы · $name"
+                    }
+                }
                 val matchedItems = fetched.items
                 val currentItems = allItems
                 val merged = withContext(Dispatchers.Default) {
@@ -567,9 +561,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 ) {
                     Text("Режим поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                     FlowChips(items = listOf("Весь мир", "Локальная сеть", "Диапазон IP"), selected = scanScope, onSelect = {
-                        scanScope = it
-                        localResults = emptyList()
-                        errorMessage = ""
+                        if (!loading) {
+                            scanScope = it
+                            localResults = emptyList()
+                            errorMessage = ""
+                        }
                     })
                     Text(
                         when (scanScope) {
@@ -608,17 +604,19 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         )
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
                     }
-                    Text("Протоколы для поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 11.sp)
-                    val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
-                    MultiSelectChips(
-                        items = scanFilters,
-                        selected = scanFiltersSelected,
-                        onChange = { scanFiltersSelected = it; errorMessage = "" },
-                        allLabel = "Все типы",
-                        enabled = !loading
-                    )
+                    if (scanScope == "Весь мир") {
+                        Text("Протоколы для поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 11.sp)
+                        val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+                        MultiSelectChips(
+                            items = scanFilters,
+                            selected = scanFiltersSelected,
+                            onChange = { scanFiltersSelected = it; errorMessage = "" },
+                            allLabel = "Все типы",
+                            enabled = !loading
+                        )
+                    }
                 }
             }
             item(key = "localResultsHeader") {
@@ -661,7 +659,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), AccentCyan)
                     MetricCard("Проверен", allItems.count { it.isTunnelVerified }.toString(), "туннель работает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
-                    MetricCard("Средний ping", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), AccentCyanSoft)
+                    MetricCard("Средняя задержка", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), AccentCyanSoft)
                 }
             }
             item(key = "status") {
@@ -903,7 +901,7 @@ private fun HeroPanel(loading: Boolean, checkingCount: Int, onScan: () -> Unit, 
             if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = Color(0xFF06131C), strokeWidth = 2.dp)
             else Icon(Icons.Default.Radar, null, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(9.dp))
-            Text(if (loading) "Сканирование выполняется…" else "ЗАПУСТИТЬ СКАНИРОВАНИЕ", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+            Text(if (loading) "Сканирование выполняется…" else "Запустить поиск", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Tune, null, tint = AccentCyan, modifier = Modifier.size(13.dp))

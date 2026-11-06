@@ -60,22 +60,30 @@ class ProxyRepository(private val context: Context) {
         Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https")
     )
 
-    suspend fun fetch(protocolFilter: String = "Все типы", onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
-        val filter = protocolFilter.uppercase(Locale.ROOT)
-        val selectedSources = when (filter) {
-            "SOCKS5" -> sources.filter { it.protocol.equals("socks5", true) }
-            "SOCKS4" -> sources.filter { it.protocol.equals("socks4", true) }
-            "HTTP" -> sources.filter { it.protocol.equals("http", true) }
-            "HTTPS" -> sources.filter { it.protocol.equals("https", true) }
-            "HYSTERIA2" -> sources.filter { it.protocol.equals("hysteria2", true) || it.protocol == "mixed" }
-            "TUIC" -> sources.filter { it.protocol.equals("tuic", true) || it.protocol == "mixed" }
-            "TROJAN" -> sources.filter { it.protocol.equals("trojan", true) || it.protocol == "mixed" || it.name.contains("3inker", true) }
-            "VLESS" -> sources.filter { it.protocol.equals("vless", true) || it.protocol == "mixed" || it.name.contains("Vless", true) || it.name.contains("3inker", true) }
-            "VMESS" -> sources.filter { it.protocol.equals("vmess", true) || it.protocol == "mixed" || it.name.contains("3inker", true) || it.name.contains("Pawdroid", true) || it.name.contains("SylphNet", true) }
-            "SHADOWSOCKS" -> sources.filter { it.protocol == "mixed" || it.name.contains("3inker", true) || it.name.contains("Pawdroid", true) }
-            else -> sources
+    suspend fun fetch(protocolFilter: String = "Все типы", onSource: suspend (String) -> Unit): FetchResult =
+        fetch(if (protocolFilter.equals("Все типы", ignoreCase = true)) emptySet() else setOf(protocolFilter), onSource)
+
+    /** Downloads the union of required source feeds once, then filters parsed configs in memory. */
+    suspend fun fetch(protocolFilters: Set<String>, onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
+        val filters = protocolFilters.map { it.uppercase(Locale.ROOT) }.toSet()
+        val allProtocols = filters.isEmpty() || "ВСЕ ТИПЫ" in filters
+        fun sourceSupports(source: Source, filter: String): Boolean = when (filter) {
+            "SOCKS5" -> source.protocol.equals("socks5", true)
+            "SOCKS4" -> source.protocol.equals("socks4", true)
+            "HTTP" -> source.protocol.equals("http", true)
+            "HTTPS" -> source.protocol.equals("https", true)
+            "HYSTERIA2" -> source.protocol.equals("hysteria2", true) || source.protocol == "mixed"
+            "TUIC" -> source.protocol.equals("tuic", true) || source.protocol == "mixed"
+            "TROJAN" -> source.protocol.equals("trojan", true) || source.protocol == "mixed" || source.name.contains("3inker", true)
+            "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
+            "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
+            "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
+            else -> false
         }
-        val gate = Semaphore(if (protocolFilter == "Все типы") 4 else 3)
+        val selectedSources = if (allProtocols) sources else sources.filter { source ->
+            filters.any { filter -> sourceSupports(source, filter) }
+        }
+        val gate = Semaphore(if (allProtocols) 4 else 3)
         val results = coroutineScope {
             selectedSources.map { source -> async {
                 gate.withPermit {
@@ -91,11 +99,11 @@ class ProxyRepository(private val context: Context) {
         val sourceErrors = results.filter { it.error != null }.associate { it.name to it.error!! }
         val merged = linkedMapOf<String, ProxyItem>()
         results.flatMap { it.items }.asSequence()
-            .filter { protocolFilter == "Все типы" || it.protocol.equals(protocolFilter, ignoreCase = true) }
+            .filter { allProtocols || it.protocol.uppercase(Locale.ROOT) in filters }
             .forEach { item ->
-            val key = item.rawConfig.trim()
-            if (key.isNotEmpty() && !merged.containsKey(key)) merged[key] = item
-        }
+                val key = item.rawConfig.trim()
+                if (key.isNotEmpty() && !merged.containsKey(key)) merged[key] = item
+            }
         val favorites = loadFavorites()
         FetchResult(merged.values.map { it.copy(favorite = favorites.contains(it.id)) }, sourceCounts, sourceErrors)
     }
@@ -357,9 +365,9 @@ class ProxyRepository(private val context: Context) {
     }
 
     private fun probeHttp204(item: ProxyItem, targetHost: String, targetPort: Int, targetPath: String): Int {
-        val credentials = runCatching { URI(item.rawConfig).rawUserInfo }.getOrNull()
-        val user = credentials?.substringBefore(':')?.let { java.net.URLDecoder.decode(it, "UTF-8") }
-        val pass = credentials?.substringAfter(':', "")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+        val credentials = parseProxyCredentials(item.rawConfig)
+        val user = credentials?.first
+        val pass = credentials?.second
         val socket = Socket()
         socket.tcpNoDelay = true
         socket.soTimeout = 5500
@@ -890,13 +898,9 @@ internal object ConfigParser {
         }
 
         if (!allowBase64Decode || payload.contains('@') || payload.contains(':')) return null
-        val decoded = runCatching {
-            val normalized = payload.replace('-', '+').replace('_', '/')
-            val padded = normalized + "=".repeat((4 - normalized.length % 4) % 4)
-            String(java.util.Base64.getDecoder().decode(padded), Charsets.UTF_8).trim()
-        }.getOrNull() ?: return null
+        val decoded = decodeBase64Utf8(payload)?.trim() ?: return null
         if (decoded.isBlank() || decoded == payload || decoded.any { it.isISOControl() }) return null
-        val authority = decoded.removePrefix("socks://").removePrefix("socks5://")
+        val authority = decoded.substringAfter("://", decoded)
         return parseSocksEndpoint(authority, allowBase64Decode = false)
     }
 
@@ -1028,4 +1032,46 @@ internal fun mergeResolvedGeoResults(original: List<ProxyItem>, resolved: List<P
             city = item.city.ifBlank { geo.city }
         )
     }
+}
+
+
+/** Decodes RFC 4648 Base64 without requiring Android API 26 java.util.Base64. */
+private fun decodeBase64Utf8(value: String): String? {
+    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    val normalized = value.trim().replace('-', '+').replace('_', '/')
+    if (normalized.isEmpty() || normalized.any { it != '=' && alphabet.indexOf(it) < 0 }) return null
+    val output = java.io.ByteArrayOutputStream()
+    var accumulator = 0
+    var bitCount = 0
+    for (character in normalized) {
+        if (character == '=') break
+        accumulator = (accumulator shl 6) or alphabet.indexOf(character)
+        bitCount += 6
+        if (bitCount >= 8) {
+            bitCount -= 8
+            output.write((accumulator shr bitCount) and 0xFF)
+            accumulator = accumulator and ((1 shl bitCount) - 1)
+        }
+    }
+    if (output.size() == 0) return null
+    val decoded = String(output.toByteArray(), Charsets.UTF_8)
+    return decoded.takeIf { it.none(Char::isISOControl) }
+}
+
+/** Reads plain, percent-encoded, partial-Base64 and full-Base64 proxy credentials. */
+internal fun parseProxyCredentials(rawConfig: String): Pair<String, String>? {
+    val rawUserInfo = runCatching { URI(rawConfig).rawUserInfo }.getOrNull()
+    val encodedOrPlain = rawUserInfo ?: run {
+        val payload = rawConfig.substringAfter("://", "").substringBefore('#').substringBefore('?')
+        val decodedAuthority = decodeBase64Utf8(payload) ?: return null
+        val authority = decodedAuthority.substringAfter("://", decodedAuthority)
+        authority.substringBeforeLast('@', "").takeIf { it.isNotEmpty() } ?: return null
+    }
+    val uriDecoded = runCatching {
+        java.net.URLDecoder.decode(encodedOrPlain.replace("+", "%2B"), "UTF-8")
+    }.getOrDefault(encodedOrPlain)
+    val credentials = if (uriDecoded.contains(':')) uriDecoded else decodeBase64Utf8(uriDecoded) ?: return null
+    val separator = credentials.indexOf(':')
+    if (separator <= 0) return null
+    return credentials.substring(0, separator) to credentials.substring(separator + 1)
 }
