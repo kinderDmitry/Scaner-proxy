@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
                     ProxyFinderScreen(
                         repo = repository,
                         onShare = { item ->
-                            val config = normalizeProxySchemeForHapp(item.rawConfig)
+                            val config = namedConfigForImport(item)
                             val isSocks4 = item.protocol.equals("SOCKS4", ignoreCase = true)
                             val choices = if (isSocks4) arrayOf("Другие приложения / поделиться", "Копировать конфигурацию")
                                 else arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
                             val unique = items.distinctBy { it.rawConfig.trim() }
                                 .filter { it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", true) }
                             if (unique.isNotEmpty()) {
-                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.joinToString("\n") { normalizeProxySchemeForHapp(it.rawConfig) }
+                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.joinToString("\n") { namedConfigForImport(it) }
                                 val send = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, payload)
@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
                                         put("id", item.id); put("protocol", item.protocol); put("host", item.host); put("port", item.port)
                                         put("name", item.title); put("country", item.country); put("city", item.city)
                                         put("source", item.source); put("status", item.checkStatus); put("verified", item.isTunnelVerified)
-                                        put("latencyMs", item.latencyMs ?: org.json.JSONObject.NULL); put("config", normalizeProxySchemeForHapp(item.rawConfig))
+                                        put("latencyMs", item.latencyMs ?: org.json.JSONObject.NULL); put("config", namedConfigForImport(item))
                                     }) }
                                 }).toString(2)
                             jsonFileLauncher.launch("proxy-finder-${System.currentTimeMillis()}.json")
@@ -209,7 +209,29 @@ internal fun normalizeProxySchemeForHapp(config: String): String {
 }
 
 /** Returns a clean, HAPP-compatible configuration string for single-item copy actions. */
-internal fun namedConfigForImport(item: ProxyItem): String = normalizeProxySchemeForHapp(item.rawConfig)
+internal fun namedConfigForImport(item: ProxyItem): String {
+    val normalized = normalizeProxySchemeForHapp(item.rawConfig)
+    if (!item.protocol.equals("SOCKS5", ignoreCase = true) || !normalized.startsWith("socks://", ignoreCase = true)) {
+        return normalized
+    }
+
+    // Build the endpoint from parsed fields so full-Base64 SOCKS imports are normalized too.
+    val credentials = parseProxyCredentials(item.rawConfig)
+    val userInfo = credentials?.let { "${Uri.encode(it.first)}:${Uri.encode(it.second)}" } ?: ":"
+    val host = if (item.host.contains(':')) "[${item.host}]" else item.host
+    val endpoint = "socks://$userInfo@$host:${item.port}"
+
+    val code = item.countryCode.trim().uppercase(java.util.Locale.ROOT)
+    val label = if (code.matches(Regex("[A-Z]{2}")) && code in java.util.Locale.getISOCountries()) {
+        val countryName = item.country.ifBlank {
+            java.util.Locale("", code).getDisplayCountry(java.util.Locale.getDefault()).ifBlank { code }
+        }
+        "${countryFlag(code)} $countryName"
+    } else {
+        item.title.trim()
+    }
+    return if (label.isBlank()) endpoint else "$endpoint#${Uri.encode(label)}"
+}
 
 @Composable
 private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
