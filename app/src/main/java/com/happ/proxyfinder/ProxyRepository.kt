@@ -894,7 +894,7 @@ internal object ConfigParser {
         }
 
         parseAuthority(payload)?.let { (host, port) ->
-            if (port in 1..65535 && host.length <= 253) return host to port
+            if (port in 1..65535 && isValidSocksHost(host)) return host to port
         }
 
         if (!allowBase64Decode || payload.contains('@') || payload.contains(':')) return null
@@ -902,6 +902,34 @@ internal object ConfigParser {
         if (decoded.isBlank() || decoded == payload || decoded.any { it.isISOControl() }) return null
         val authority = decoded.substringAfter("://", decoded)
         return parseSocksEndpoint(authority, allowBase64Decode = false)
+    }
+
+    /**
+     * Validates SOCKS endpoint hosts without resolving ordinary DNS names.
+     * IPv6 literals are parsed locally; DNS names must use valid ASCII/IDN labels.
+     */
+    private fun isValidSocksHost(rawHost: String): Boolean {
+        val host = rawHost.removePrefix("[").removeSuffix("]").trim()
+        if (host.isEmpty() || host.length > 253 || host.any { it.isWhitespace() || it.isISOControl() }) return false
+
+        if (host.contains(':')) {
+            if (!host.matches(Regex("[0-9A-Fa-f:.]+"))) return false
+            return runCatching { java.net.InetAddress.getByName(host) is java.net.Inet6Address }.getOrDefault(false)
+        }
+
+        if (host.matches(Regex("[0-9.]+"))) {
+            val octets = host.split('.')
+            return octets.size == 4 && octets.all { part ->
+                part.isNotEmpty() && part.length <= 3 && part.toIntOrNull()?.let { it in 0..255 } == true
+            }
+        }
+
+        return host.split('.').all { label ->
+            label.isNotEmpty() && label.length <= 63 &&
+                label.firstOrNull()?.let { it.isLetterOrDigit() } == true &&
+                label.lastOrNull()?.let { it.isLetterOrDigit() } == true &&
+                label.all { it.isLetterOrDigit() || it == '-' }
+        }
     }
 
     private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
