@@ -307,7 +307,7 @@ class ProxyItemTest {
             country = "Германия", countryCode = "DE"
         )
         assertEquals(
-            "socks://:@203.0.113.10:1080#%F0%9F%87%A9%F0%9F%87%AA%20Германия",
+            "socks://:@203.0.113.10:1080#%F0%9F%87%A9%F0%9F%87%AA%20%D0%93%D0%B5%D1%80%D0%BC%D0%B0%D0%BD%D0%B8%D1%8F",
             namedConfigForImport(germany)
         )
     }
