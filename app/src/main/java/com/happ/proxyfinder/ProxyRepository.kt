@@ -142,8 +142,10 @@ class ProxyRepository(private val context: Context) {
             ) android.util.Base64InputStream(buffered, android.util.Base64.DEFAULT) else buffered
 
             var count = 0
-            java.io.BufferedReader(java.io.InputStreamReader(decodedStream, Charsets.UTF_8)).useLines { lines ->
-                lines.forEach { raw ->
+            val reader = java.io.BufferedReader(java.io.InputStreamReader(decodedStream, Charsets.UTF_8))
+            try {
+                while (true) {
+                    val raw = reader.readLine() ?: break
                     val line = raw.trim().removePrefix("\uFEFF").substringBefore(" | ").trim()
                     if (line.isNotEmpty()) {
                         val candidate = if (source.protocol != null && !line.contains("://")) "${source.protocol}://$line" else line
@@ -157,6 +159,8 @@ class ProxyRepository(private val context: Context) {
                         }
                     }
                 }
+            } finally {
+                reader.close()
             }
             return count
         } finally {
@@ -805,7 +809,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     fun writeVerifiedJson(output: java.io.OutputStream): Int {
         val writer = java.io.OutputStreamWriter(output, Charsets.UTF_8)
         var count = 0
-        writer.write("{\\"format\\":\\"happ-proxy-finder\\",\\"version\\":1,\\"exportedAt\\":${System.currentTimeMillis()},\\"proxies\\":[")
+        writer.write("{\"format\":\"happ-proxy-finder\",\"version\":1,\"exportedAt\":${System.currentTimeMillis()},\"proxies\":[")
         val sql = "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
         readableDatabase.rawQuery(sql, null).use { cursor ->
             while (cursor.moveToNext()) {

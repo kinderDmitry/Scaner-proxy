@@ -321,6 +321,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         scope.launch(Dispatchers.IO) {
             repo.saveSnapshot(items)
             repo.saveFavorites(favorites)
+            val stats = repo.snapshotStats()
+            withContext(Dispatchers.Main) {
+                totalStoredCount = stats.first
+                totalVerifiedCount = stats.second
+            }
         }
     }
 
@@ -330,6 +335,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         withContext(Dispatchers.IO) {
             repo.saveSnapshot(items)
             repo.saveFavorites(favorites)
+            val stats = repo.snapshotStats()
+            withContext(Dispatchers.Main) {
+                totalStoredCount = stats.first
+                totalVerifiedCount = stats.second
+            }
         }
     }
 
