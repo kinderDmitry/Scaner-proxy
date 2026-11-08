@@ -1010,7 +1010,8 @@ private fun FlowChips(items: List<String>, selected: String, onSelect: (String) 
 private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Unit, onShare: () -> Unit, onCopy: () -> Unit) {
     var expanded by remember(item.id) { mutableStateOf(false) }
     val borderColor = when {
-        item.isTcpReachable -> Green.copy(alpha = 0.3f)
+        item.isTunnelVerified -> Green.copy(alpha = 0.3f)
+        item.checkStatus.startsWith("TCP доступен") -> Amber.copy(alpha = 0.3f)
         item.checkStatus == "TCP недоступен" -> Red.copy(alpha = 0.2f)
         else -> Line
     }
@@ -1020,7 +1021,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
         Column(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(borderColor.copy(alpha = 0.08f), Color.Transparent))).padding(14.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF16283A)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Public, null, tint = if (item.isTunnelVerified) Green else AccentCyan, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Public, null, tint = if (item.isTunnelVerified) Green else if (item.checkStatus.startsWith("TCP доступен")) Amber else AccentCyan, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
