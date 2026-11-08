@@ -209,6 +209,9 @@ internal fun normalizeProxySchemeForHapp(config: String): String {
 }
 
 /** Returns a clean, HAPP-compatible configuration string for single-item copy actions. */
+private fun encodeUriComponent(value: String): String =
+    java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
 internal fun namedConfigForImport(item: ProxyItem): String {
     val normalized = normalizeProxySchemeForHapp(item.rawConfig)
     if (!item.protocol.equals("SOCKS5", ignoreCase = true) || !normalized.startsWith("socks://", ignoreCase = true)) {
@@ -217,7 +220,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
 
     // Build the endpoint from parsed fields so full-Base64 SOCKS imports are normalized too.
     val credentials = parseProxyCredentials(item.rawConfig)
-    val userInfo = credentials?.let { "${Uri.encode(it.first)}:${Uri.encode(it.second)}" } ?: ":"
+    val userInfo = credentials?.let { "${encodeUriComponent(it.first)}:${encodeUriComponent(it.second)}" } ?: ":"
     val host = if (item.host.contains(':')) "[${item.host}]" else item.host
     val endpoint = "socks://$userInfo@$host:${item.port}"
 
@@ -230,7 +233,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
     } else {
         item.title.trim()
     }
-    return if (label.isBlank()) endpoint else "$endpoint#${Uri.encode(label)}"
+    return if (label.isBlank()) endpoint else "$endpoint#${encodeUriComponent(label)}"
 }
 
 @Composable
