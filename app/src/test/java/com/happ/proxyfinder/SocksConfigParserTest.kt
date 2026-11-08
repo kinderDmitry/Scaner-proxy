@@ -49,4 +49,27 @@ class SocksConfigParserTest {
         assertNull(ConfigParser.parseConfig("socks://user:pass@example.com:99999"))
         assertNull(ConfigParser.parseConfig("socks://example.com"))
     }
+
+    @Test
+    fun acceptsBracketedIpv6SocksEndpoint() {
+        val item = ConfigParser.parseConfig("socks5://[2001:db8::1]:1080")
+        assertNotNull(item)
+        assertEquals("2001:db8::1", item!!.host)
+        assertEquals(1080, item.port)
+    }
+
+    @Test
+    fun rejectsInvalidSocksHosts() {
+        assertNull(ConfigParser.parseConfig("socks://user:pass@bad host:1080"))
+        assertNull(ConfigParser.parseConfig("socks://user:pass@999.1.1.1:1080"))
+        assertNull(ConfigParser.parseConfig("socks://user:pass@[2001:db8:::1]:1080"))
+        assertNull(ConfigParser.parseConfig("socks://user:pass@bad_host.example:1080"))
+    }
+
+    @Test
+    fun acceptsValidInternationalizedDomainInAsciiForm() {
+        val item = ConfigParser.parseConfig("socks5://proxy.xn--e1afmkfd.xn--p1ai:1080")
+        assertNotNull(item)
+        assertEquals("proxy.xn--e1afmkfd.xn--p1ai", item!!.host)
+    }
 }
