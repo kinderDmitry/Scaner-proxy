@@ -31,4 +31,26 @@ class ProxyDisplayNameTest {
     fun displayNameDoesNotLeakLegacyTitleWhenLocationIsUnknown() {
         assertEquals("🏳️ Геолокация не определена", proxyDisplayName(item("", "", "")))
     }
+    @Test
+    fun happImportLabelUsesFlagCountryAndCityForVless() {
+        val config = namedConfigForImport(
+            item("Германия", "DE", "Франкфурт").copy(
+                rawConfig = "vless://uuid@example.com:443?security=tls#old-feed-name"
+            )
+        )
+        assertEquals("🇩🇪 Германия · Франкфурт", java.net.URI(config).fragment)
+    }
+
+    @Test
+    fun happSocksImportLabelIncludesCity() {
+        val config = namedConfigForImport(
+            item("Германия", "DE", "Франкфурт").copy(
+                protocol = "SOCKS5",
+                rawConfig = "socks5://example.com:1080"
+            )
+        )
+        assertEquals("🇩🇪 Германия · Франкфурт", java.net.URI(config).fragment)
+        assertEquals("socks://:@example.com:1080", config.substringBefore("#"))
+    }
+
 }
