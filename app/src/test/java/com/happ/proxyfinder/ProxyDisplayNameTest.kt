@@ -46,6 +46,7 @@ class ProxyDisplayNameTest {
         val config = namedConfigForImport(
             item("Германия", "DE", "Франкфурт").copy(
                 host = "example.com",
+                port = 1080,
                 protocol = "SOCKS5",
                 rawConfig = "socks5://example.com:1080"
             )
