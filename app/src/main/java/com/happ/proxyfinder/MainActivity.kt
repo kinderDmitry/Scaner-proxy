@@ -751,7 +751,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Spacer(Modifier.width(8.dp))
                     Column(horizontalAlignment = Alignment.Start) {
                         Text(if (autoCheckRunning) "Проверка туннелей…" else "Проверить следующие 48", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS требуют проверки или повторной проверки", fontSize = 11.sp, color = TextMuted)
+                        Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS/VLESS TCP+TLS требуют проверки или повторной проверки", fontSize = 11.sp, color = TextMuted)
                     }
                 }
                 Text("Проверка выполняет протокольный handshake и реальный HTTPS-запрос для SOCKS/HTTP и VLESS TCP+TLS. Другие транспорты пока отмечаются как неподдерживаемые.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
