@@ -210,6 +210,23 @@ internal fun normalizeProxySchemeForHapp(config: String): String {
 private fun encodeUriComponent(value: String): String =
     java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
+/** Stable node label: location only, without host, port, protocol or source metadata. */
+internal fun proxyDisplayName(item: ProxyItem): String {
+    val code = item.countryCode.trim().uppercase(java.util.Locale.ROOT)
+    val flag = countryFlag(code)
+    val country = item.country.trim()
+    if (country.isBlank()) return "🏳️ Геолокация не определена"
+    return buildString {
+        append(flag)
+        append(" ")
+        append(country)
+        if (item.city.isNotBlank()) {
+            append(" · ")
+            append(item.city.trim())
+        }
+    }
+}
+
 internal fun namedConfigForImport(item: ProxyItem): String {
     val normalized = normalizeProxySchemeForHapp(item.rawConfig)
     if (!item.protocol.equals("SOCKS5", ignoreCase = true) || !normalized.startsWith("socks://", ignoreCase = true)) {
@@ -227,9 +244,17 @@ internal fun namedConfigForImport(item: ProxyItem): String {
         val countryName = item.country.ifBlank {
             java.util.Locale("", code).getDisplayCountry(java.util.Locale.getDefault()).ifBlank { code }
         }
-        "${countryFlag(code)} $countryName"
+        buildString {
+            append(countryFlag(code))
+            append(" ")
+            append(countryName)
+            if (item.city.isNotBlank()) {
+                append(" · ")
+                append(item.city.trim())
+            }
+        }
     } else {
-        item.title.trim()
+        proxyDisplayName(item)
     }
     return if (label.isBlank()) endpoint else "$endpoint#${encodeUriComponent(label)}"
 }
@@ -1056,7 +1081,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(item.title.ifBlank { item.protocol }, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(proxyDisplayName(item), color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${item.host}:${item.port}", color = TextMuted, fontSize = 13.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = onFavorite, modifier = Modifier.size(40.dp)) {
@@ -1066,7 +1091,6 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Tag(item.protocol.uppercase(), AccentCyan.copy(alpha = 0.08f), AccentCyan)
-                Tag("${countryFlag(item.countryCode)} ${item.country.ifBlank { "Страна не определена" }}", Green.copy(alpha = 0.10f), Green)
                 Spacer(Modifier.weight(1f))
                 val statusColor = if (item.isTunnelVerified) Green else if (item.checkStatus == "TCP недоступен") Red else Amber
                 Box(Modifier.size(6.dp).clip(CircleShape).background(statusColor))
