@@ -440,16 +440,18 @@ class ProxyRepository(private val context: Context) {
     suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
         val checkedAt = System.currentTimeMillis()
         if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
-        val started = System.nanoTime()
         try {
             val targets = listOf("www.gstatic.com" to "/generate_204", "cp.cloudflare.com" to "/generate_204")
             var lastStatus: Int? = null
             var lastError: Exception? = null
             for ((targetHost, targetPath) in targets) {
+                // Measure each successful URL-test independently. A failed Google attempt must
+                // not be added to the Cloudflare latency shown to the user.
+                val attemptStarted = System.nanoTime()
                 try {
                     val status = probeHttp204(item, targetHost, 443, targetPath)
                     if (status == 204) {
-                        val elapsed = ((System.nanoTime() - started) / 1_000_000).toInt().coerceAtLeast(1)
+                        val elapsed = ((System.nanoTime() - attemptStarted) / 1_000_000).toInt().coerceAtLeast(1)
                         return@withContext item.copy(checkStatus = "Проверен через HTTPS-туннель · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
                     }
                     lastStatus = status
