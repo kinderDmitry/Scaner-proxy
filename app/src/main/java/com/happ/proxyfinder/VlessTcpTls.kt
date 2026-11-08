@@ -182,6 +182,7 @@ internal object VlessTcpTls {
 
     private fun isValidHost(value: String): Boolean {
         if (value.isBlank() || value.length > 253 || value.any { it.isWhitespace() || it.isISOControl() }) return false
+        if (value.matches(Regex("[0-9.]+"))) return isIpLiteral(value)
         if (isIpLiteral(value)) return true
         return runCatching {
             val ascii = IDN.toASCII(value, IDN.USE_STD3_ASCII_RULES)
