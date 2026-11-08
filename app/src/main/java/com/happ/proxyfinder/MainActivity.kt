@@ -309,7 +309,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         if (loading || autoCheckRunning) return
         val batch = allItems.filter { it.needsNativeTunnelCheck }.take(48)
         if (batch.isEmpty()) {
-            Toast.makeText(context, "Нет новых SOCKS4/SOCKS5/HTTP/HTTPS узлов для полной проверки. Для Shadowsocks, VLESS, VMess, Trojan, Hysteria2 и TUIC требуется sing-box core.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Нет новых SOCKS4/SOCKS5/HTTP/HTTPS/VLESS TCP+TLS узлов для полной проверки. Для VMess, Trojan, Shadowsocks, Hysteria2 и TUIC пока нужен отдельный протокольный модуль.", Toast.LENGTH_LONG).show()
             return
         }
         autoCheckRunning = true
@@ -754,7 +754,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS требуют проверки или повторной проверки", fontSize = 11.sp, color = TextMuted)
                     }
                 }
-                Text("Проверка делает CONNECT/SOCKS handshake и реальный HTTPS-запрос. Другие протоколы будут проверяться после подключения sing-box core.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
+                Text("Проверка выполняет протокольный handshake и реальный HTTPS-запрос для SOCKS/HTTP и VLESS TCP+TLS. Другие транспорты пока отмечаются как неподдерживаемые.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
@@ -827,7 +827,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "disclaimer") {
                 Text(
-                    "При передаче в HAPP доступны все найденные конфигурации, в том числе непроверенные. У SOCKS4/SOCKS5/HTTP/HTTPS проверяется туннель; у VLESS, VMess, Trojan, Shadowsocks, Hysteria2 и TUIC без sing-box core подтверждается только TCP-доступность.",
+                    "При передаче в HAPP доступны все найденные конфигурации, в том числе непроверенные. Полный HTTPS-туннель проверяется у SOCKS4/SOCKS5/HTTP/HTTPS и VLESS TCP+TLS. Для VMess, Trojan, Shadowsocks, Hysteria2, TUIC и неподдерживаемых транспортов VLESS рабочий туннель не подтверждается.",
                     color = TextMuted.copy(alpha = 0.75f), fontSize = 11.sp, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )
