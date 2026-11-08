@@ -60,6 +60,110 @@ class ProxyRepository(private val context: Context) {
         Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https")
     )
 
+    /**
+     * Streams every parsed configuration to the caller as soon as it is discovered.
+     * Feed contents are processed line-by-line; checked records are persisted by the caller.
+     */
+    suspend fun fetchStreaming(
+        protocolFilters: Set<String>,
+        onSource: suspend (String) -> Unit,
+        onItem: suspend (ProxyItem) -> Unit
+    ): FetchSummary = withContext(Dispatchers.IO) {
+        val filters = protocolFilters.map { it.uppercase(Locale.ROOT) }.toSet()
+        val allProtocols = filters.isEmpty() || "ВСЕ ТИПЫ" in filters
+        fun sourceSupports(source: Source, filter: String): Boolean = when (filter) {
+            "SOCKS5" -> source.protocol.equals("socks5", true)
+            "SOCKS4" -> source.protocol.equals("socks4", true)
+            "HTTP" -> source.protocol.equals("http", true)
+            "HTTPS" -> source.protocol.equals("https", true)
+            "HYSTERIA2" -> source.protocol.equals("hysteria2", true) || source.protocol == "mixed"
+            "TUIC" -> source.protocol.equals("tuic", true) || source.protocol == "mixed"
+            "TROJAN" -> source.protocol.equals("trojan", true) || source.protocol == "mixed" || source.name.contains("3inker", true)
+            "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
+            "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
+            "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
+            else -> false
+        }
+        val selectedSources = if (allProtocols) sources else sources.filter { source ->
+            filters.any { filter -> sourceSupports(source, filter) }
+        }
+        val seen = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val sourceCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        val sourceErrors = java.util.concurrent.ConcurrentHashMap<String, String>()
+        val gate = Semaphore(4)
+        coroutineScope {
+            selectedSources.map { source -> async {
+                gate.withPermit {
+                    onSource(source.name)
+                    try {
+                        sourceCounts[source.name] = fetchSourceStreaming(source, seen, allProtocols, filters, onItem)
+                    } catch (error: Exception) {
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        sourceCounts[source.name] = 0
+                        sourceErrors[source.name] = error.message?.take(100) ?: error.javaClass.simpleName
+                    }
+                }
+            } }.awaitAll()
+        }
+        FetchSummary(seen.size, sourceCounts.toMap(), sourceErrors.toMap())
+    }
+
+    private suspend fun fetchSourceStreaming(
+        source: Source,
+        seen: MutableSet<String>,
+        allProtocols: Boolean,
+        filters: Set<String>,
+        onItem: suspend (ProxyItem) -> Unit
+    ): Int {
+        val connection = URL(source.url).openConnection() as? java.net.HttpURLConnection
+            ?: throw IllegalStateException("Источник не использует HTTP")
+        try {
+            connection.connectTimeout = 8000
+            connection.readTimeout = 12000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty("User-Agent", "PROXY-HUNTER-X/2.0 (Android)")
+            connection.setRequestProperty("Accept", "text/plain,application/octet-stream,*/*")
+            connection.setRequestProperty("Cache-Control", "no-cache")
+            val status = connection.responseCode
+            if (status !in 200..299) throw java.io.IOException("HTTP $status")
+
+            val buffered = java.io.BufferedInputStream(connection.inputStream)
+            buffered.mark(512)
+            val sampleBytes = ByteArray(256)
+            val sampleLength = buffered.read(sampleBytes)
+            buffered.reset()
+            if (sampleLength <= 0) throw java.io.IOException("Пустой ответ")
+            val sample = String(sampleBytes, 0, sampleLength, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+            val hasConfigScheme = Regex("(?i)^(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://").containsMatchIn(sample)
+            val compactSample = sample.filterNot(Char::isWhitespace).take(128)
+            val looksBase64 = compactSample.length >= 32 && compactSample.all { it.isLetterOrDigit() || it in "+/=_-" }
+            val decodedStream = if (source.protocol == null && !hasConfigScheme &&
+                !sample.startsWith("#") && !sample.startsWith("//") && looksBase64
+            ) android.util.Base64InputStream(buffered, android.util.Base64.DEFAULT) else buffered
+
+            var count = 0
+            java.io.BufferedReader(java.io.InputStreamReader(decodedStream, Charsets.UTF_8)).useLines { lines ->
+                lines.forEach { raw ->
+                    val line = raw.trim().removePrefix("\uFEFF").substringBefore(" | ").trim()
+                    if (line.isNotEmpty()) {
+                        val candidate = if (source.protocol != null && !line.contains("://")) "${source.protocol}://$line" else line
+                        val item = ConfigParser.parseConfig(candidate, source.name)
+                        if (item != null && (allProtocols || item.protocol.uppercase(Locale.ROOT) in filters)) {
+                            val key = item.rawConfig.trim()
+                            if (key.isNotEmpty() && seen.add(key)) {
+                                count++
+                                onItem(item)
+                            }
+                        }
+                    }
+                }
+            }
+            return count
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun fetch(protocolFilter: String = "Все типы", onSource: suspend (String) -> Unit): FetchResult =
         fetch(if (protocolFilter.equals("Все типы", ignoreCase = true)) emptySet() else setOf(protocolFilter), onSource)
 
@@ -487,11 +591,19 @@ class ProxyRepository(private val context: Context) {
         throw java.io.IOException("HTTP proxy не вернул полные заголовки")
     }
 
+    /** Checks the complete supplied set with bounded coroutine creation and bounded concurrency. */
     suspend fun checkBatch(items: List<ProxyItem>, onResult: suspend (ProxyItem) -> Unit): List<ProxyItem> = coroutineScope {
-        val gate = Semaphore(8)
-        items.map { item -> async {
-            gate.withPermit { check(item).also { onResult(it) } }
-        } }.awaitAll()
+        val completed = ArrayList<ProxyItem>(items.size)
+        items.chunked(128).forEach { chunk ->
+            val gate = Semaphore(8)
+            val results = coroutineScope {
+                chunk.map { item -> async {
+                    gate.withPermit { check(item).also { onResult(it) } }
+                } }.awaitAll()
+            }
+            completed.addAll(results)
+        }
+        completed
     }
 
     suspend fun resolveCountries(items: List<ProxyItem>, onResolved: suspend (ProxyItem) -> Unit): List<ProxyItem> = withContext(Dispatchers.IO) {
@@ -601,6 +713,18 @@ class ProxyRepository(private val context: Context) {
         return store.readLatest(limit)
     }
 
+    /** Full database counts; the UI cache limit never changes these totals. */
+    fun snapshotStats(): Pair<Int, Int> {
+        migrateLegacySnapshot()
+        return store.stats()
+    }
+
+    /** Writes every verified unique row directly from SQLite without materializing the export in memory. */
+    fun exportVerifiedJson(output: java.io.OutputStream): Int {
+        migrateLegacySnapshot()
+        return store.writeVerifiedJson(output)
+    }
+
     /** Full verified-only export query; unverified rows never enter the export flow. */
     fun loadVerifiedSnapshot(): List<ProxyItem> {
         migrateLegacySnapshot()
@@ -668,6 +792,50 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
 
     fun count(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM proxy_results", null).use {
         if (it.moveToFirst()) it.getInt(0) else 0
+    }
+
+    fun stats(): Pair<Int, Int> = readableDatabase.rawQuery(
+        "SELECT COUNT(*), SUM(CASE WHEN status LIKE 'Проверен через %HTTP 204%' THEN 1 ELSE 0 END) FROM proxy_results",
+        null
+    ).use { cursor ->
+        if (cursor.moveToFirst()) cursor.getInt(0) to cursor.getInt(1) else 0 to 0
+    }
+
+    /** Streams the complete verified-only export from a SQLite cursor. */
+    fun writeVerifiedJson(output: java.io.OutputStream): Int {
+        val writer = java.io.OutputStreamWriter(output, Charsets.UTF_8)
+        var count = 0
+        writer.write("{\\"format\\":\\"happ-proxy-finder\\",\\"version\\":1,\\"exportedAt\\":${System.currentTimeMillis()},\\"proxies\\":[")
+        val sql = "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
+        readableDatabase.rawQuery(sql, null).use { cursor ->
+            while (cursor.moveToNext()) {
+                fun string(name: String) = cursor.getString(cursor.getColumnIndexOrThrow(name)) ?: ""
+                fun nullableInt(name: String): Int? {
+                    val index = cursor.getColumnIndexOrThrow(name)
+                    return if (cursor.isNull(index)) null else cursor.getInt(index)
+                }
+                val item = ProxyItem(
+                    id = string("id"), host = string("host"), port = cursor.getInt(cursor.getColumnIndexOrThrow("port")),
+                    protocol = string("protocol"), source = string("source"), rawConfig = string("raw_config"),
+                    checkStatus = string("status"), latencyMs = nullableInt("latency"),
+                    favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
+                    checkedAt = if (cursor.isNull(cursor.getColumnIndexOrThrow("checked_at"))) null else cursor.getLong(cursor.getColumnIndexOrThrow("checked_at")),
+                    title = string("title"), country = string("country"), countryCode = string("country_code"), city = string("city")
+                )
+                if (count > 0) writer.write(",")
+                val row = JSONObject().apply {
+                    put("id", item.id); put("protocol", item.protocol); put("host", item.host); put("port", item.port)
+                    put("name", item.title); put("country", item.country); put("city", item.city)
+                    put("source", item.source); put("status", item.checkStatus); put("verified", item.isTunnelVerified)
+                    put("latencyMs", item.latencyMs ?: JSONObject.NULL); put("config", namedConfigForImport(item))
+                }
+                writer.write(row.toString())
+                count++
+            }
+        }
+        writer.write("]}")
+        writer.flush()
+        return count
     }
 
     fun upsert(items: List<ProxyItem>) {
@@ -990,6 +1158,7 @@ internal object Ipv4RangeParser {
 }
 
 data class SourceFetchResult(val name: String, val items: List<ProxyItem>, val error: String?)
+data class FetchSummary(val discoveredCount: Int, val sourceCounts: Map<String, Int>, val sourceErrors: Map<String, String> = emptyMap())
 data class FetchResult(val items: List<ProxyItem>, val sourceCounts: Map<String, Int>, val sourceErrors: Map<String, String> = emptyMap())
 data class OpenEndpoint(val host: String, val port: Int, val latencyMs: Int, val protocol: String = "TCP", val status: String = "Открытый TCP-порт · прокси не подтверждён") {
     /** Port-number hint only; it is not protocol detection. */
@@ -1051,6 +1220,10 @@ data class ProxyItem(
     }
 }
 
+
+/** Selects only working, unique configs for verified-only export. */
+internal fun verifiedExportItems(items: Iterable<ProxyItem>): List<ProxyItem> =
+    items.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()
 
 /** Merge geolocation updates into the complete in-memory list without dropping unqueried proxies. */
 internal fun mergeResolvedGeoResults(original: List<ProxyItem>, resolved: List<ProxyItem>): List<ProxyItem> {

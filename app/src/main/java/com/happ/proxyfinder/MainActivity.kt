@@ -70,7 +70,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,12 +98,18 @@ private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
-    private var pendingJsonExport: String = "{}"
     private val jsonFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) runCatching {
-            contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(pendingJsonExport) } ?: error("Не удалось открыть файл")
-            Toast.makeText(this, "JSON-файл сохранён", Toast.LENGTH_LONG).show()
-        }.onFailure { Toast.makeText(this, "Ошибка сохранения: ${it.message}", Toast.LENGTH_LONG).show() }
+        if (uri != null) lifecycleScope.launch {
+            try {
+                val count = withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri)?.use { repository.exportVerifiedJson(it) }
+                        ?: error("Не удалось открыть файл")
+                }
+                Toast.makeText(this@MainActivity, "JSON сохранён: $count рабочих конфигураций", Toast.LENGTH_LONG).show()
+            } catch (error: Exception) {
+                Toast.makeText(this@MainActivity, "Ошибка сохранения: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -180,19 +189,8 @@ class MainActivity : ComponentActivity() {
                                 startActivity(Intent.createChooser(send, "Передать ${unique.size} прокси"))
                             } else Toast.makeText(this, "Нет поддерживаемых для HAPP конфигураций: SOCKS4 исключён.", Toast.LENGTH_LONG).show()
                         },
-                        onCopyAllJson = { items ->
-                            val unique = items.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
-                            pendingJsonExport = org.json.JSONObject().put("format", "happ-proxy-finder").put("version", 1)
-                                .put("exportedAt", System.currentTimeMillis())
-                                .put("proxies", org.json.JSONArray().apply {
-                                    unique.forEach { item -> put(org.json.JSONObject().apply {
-                                        put("id", item.id); put("protocol", item.protocol); put("host", item.host); put("port", item.port)
-                                        put("name", item.title); put("country", item.country); put("city", item.city)
-                                        put("source", item.source); put("status", item.checkStatus); put("verified", item.isTunnelVerified)
-                                        put("latencyMs", item.latencyMs ?: org.json.JSONObject.NULL); put("config", namedConfigForImport(item))
-                                    }) }
-                                }).toString(2)
-                            jsonFileLauncher.launch("proxy-finder-${System.currentTimeMillis()}.json")
+                        onCopyAllJson = {
+                            jsonFileLauncher.launch("proxy-finder-working-${System.currentTimeMillis()}.json")
                         }
                     )
                 }
@@ -237,8 +235,10 @@ internal fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: () -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
+    var totalStoredCount by remember { mutableIntStateOf(0) }
+    var totalVerifiedCount by remember { mutableIntStateOf(0) }
     var displayLimit by remember { mutableIntStateOf(100) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
@@ -279,8 +279,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     LaunchedEffect(repo) {
         val restored = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
+        val stats = withContext(Dispatchers.IO) { repo.snapshotStats() }
         allItems = restored
-        sourceStatus = if (restored.isEmpty()) "Готов к сканированию" else "Загружено ${restored.size} последних узлов · база сохранена"
+        totalStoredCount = stats.first
+        totalVerifiedCount = stats.second
+        sourceStatus = if (stats.first == 0) "Готов к сканированию" else "Загружено ${restored.size} последних узлов · всего в базе ${stats.first}"
     }
 
     LaunchedEffect(Unit) {
@@ -332,14 +335,14 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun checkNextBatch() {
         if (loading || autoCheckRunning) return
-        val batch = allItems.filter { it.needsNativeTunnelCheck }.take(48)
+        val batch = allItems.filter { it.needsNativeTunnelCheck }
         if (batch.isEmpty()) {
             Toast.makeText(context, "Нет новых SOCKS4/SOCKS5/HTTP/HTTPS/VLESS TCP+TLS узлов для полной проверки. Для VMess, Trojan, Shadowsocks, Hysteria2 и TUIC пока нужен отдельный протокольный модуль.", Toast.LENGTH_LONG).show()
             return
         }
         autoCheckRunning = true
         checkingCount = batch.size
-        sourceStatus = "Проверяем туннели · пакет из ${batch.size}"
+        sourceStatus = "Проверяем все ожидающие туннели · ${batch.size}"
         sourceProgress = "Протокольная проверка с реальным HTTPS-запросом"
         scope.launch {
             try {
@@ -350,8 +353,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 val byId = updates.associateBy { it.id }
                 persistAndSave(allItems.map { byId[it.id]?.copy(favorite = it.favorite) ?: it })
                 val verifiedNow = updates.count { it.isTunnelVerified }
-                sourceStatus = "Пакет проверен: ${updates.size} · рабочих туннелей: $verifiedNow"
-                sourceProgress = "Можно запустить следующий пакет. Неподдерживаемые протоколы не выдаются за проверенные."
+                sourceStatus = "Проверено: ${updates.size} · рабочих туннелей: $verifiedNow"
+                sourceProgress = "Обработаны все ожидавшие проверки узлы из текущего списка; неподдерживаемые протоколы не выдаются за рабочие."
             } catch (error: Exception) {
                 errorMessage = "Проверка пакета прервана: ${error.message?.take(100) ?: "ошибка сети"}"
             } finally {
@@ -414,91 +417,83 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             return
         }
         sourceStatus = "Подключаемся к открытым источникам"
-        sourceProgress = "Подготовка"
+        sourceProgress = "Потоковый поиск · проверка начинается сразу после обнаружения"
         scope.launch {
+            val channel = Channel<ProxyItem>(capacity = 128)
+            var discoveredCount = 0
+            var checkedCount = 0
+            var verifiedCount = 0
+            val workers = List(8) {
+                scope.launch {
+                    for (candidate in channel) {
+                        try {
+                            val checked = repo.check(candidate)
+                            withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(checked)) }
+                            val previous = allItems.firstOrNull { it.rawConfig.trim() == checked.rawConfig.trim() }
+                            allItems = (allItems.filterNot { it.rawConfig.trim() == checked.rawConfig.trim() } +
+                                checked.copy(favorite = previous?.favorite ?: false)).takeLast(5000)
+                            checkedCount++
+                            if (checked.isTunnelVerified) verifiedCount++
+                            if (checkedCount % 20 == 0) {
+                                sourceProgress = "Найдено $discoveredCount · проверено $checkedCount · рабочих $verifiedCount · очередь $checkingCount"
+                            }
+                        } catch (error: Exception) {
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            errorMessage = "Ошибка сохранения/проверки узла: ${error.message?.take(90) ?: "неизвестная ошибка"}"
+                        } finally {
+                            checkingCount = (checkingCount - 1).coerceAtLeast(0)
+                        }
+                    }
+                }
+            }
             try {
                 val requested = if (scanAllProtocols) emptySet() else scanFiltersSelected
-                val fetched = repo.fetch(requested) { name ->
-                    withContext(Dispatchers.Main) {
-                        sourceProgress = if (scanAllProtocols) "Все протоколы · $name" else "Выбранные протоколы · $name"
-                    }
-                }
-                val matchedItems = fetched.items
-                val currentItems = allItems
-                val merged = withContext(Dispatchers.Default) {
-                    val previousByConfig = currentItems.associateBy { it.rawConfig.trim() }
-                    (currentItems + fetched.items).distinctBy { it.rawConfig.trim() }
-                        .map { fresh ->
-                            previousByConfig[fresh.rawConfig.trim()]?.let { previous ->
-                                fresh.copy(
-                                    checkStatus = previous.checkStatus,
-                                    latencyMs = previous.latencyMs,
-                                    checkedAt = previous.checkedAt,
-                                    favorite = previous.favorite || fresh.favorite
-                                )
-                            } ?: fresh
+                val fetched = repo.fetchStreaming(
+                    requested,
+                    onSource = { name ->
+                        withContext(Dispatchers.Main) {
+                            sourceProgress = if (scanAllProtocols) "Все протоколы · $name" else "Выбранные протоколы · $name"
                         }
-                }
-                persist(merged)
-                sourceStatus = "Получено по выбранным протоколам: ${matchedItems.size} · всего в базе: ${merged.size}"
-                sourceProgress = buildString {
-                    append("Источники: ${fetched.sourceCounts.count { it.value > 0 }}/${fetched.sourceCounts.size} с конфигурациями")
-                    if (fetched.sourceErrors.isNotEmpty()) {
-                        append(" · ошибок: ${fetched.sourceErrors.size}")
-                        append(" · ")
-                        append(fetched.sourceErrors.entries.take(2).joinToString("; ") { "${it.key}: ${it.value}" })
-                    }
-                }
-                if (matchedItems.isEmpty()) {
-                    errorMessage = if (fetched.items.isEmpty()) {
-                        "Источники не ответили или не содержат поддерживаемых конфигураций. Проверь подключение и повтори попытку."
-                    } else {
-                        "По выбранным протоколам новых конфигураций нет. Ранее найденные узлы сохранены; измени фильтр и повтори поиск."
-                    }
-                } else {
-                    val batch = merged.filter { it.needsNativeTunnelCheck }.take(48)
-                    if (batch.isNotEmpty()) {
-                        sourceStatus = "Проверяем поддерживаемые прокси-туннели"
-                        checkingCount = batch.size
-                        val updates = repo.checkBatch(batch) { checked ->
-                            withContext(Dispatchers.Main) {
-                                allItems = allItems.map { if (it.id == checked.id) checked else it }
-                                checkingCount = (checkingCount - 1).coerceAtLeast(0)
+                    },
+                    onItem = { item ->
+                        withContext(Dispatchers.Main) {
+                            discoveredCount++
+                            checkingCount++
+                            if (discoveredCount == 1 || discoveredCount % 20 == 0) {
+                                sourceProgress = "Обнаружено $discoveredCount · передано на проверку · в очереди $checkingCount"
                             }
                         }
-                        val updatedIds = updates.associateBy { it.id }
-                        persistAndSave(allItems.map { updatedIds[it.id] ?: it })
-                    } else {
-                        persistAndSave(allItems)
+                        channel.send(item)
                     }
-                    sourceStatus = "Сканирование завершено"
-                    sourceProgress = "Проверено: ${allItems.count { it.isChecked }} · подтверждённые туннели: ${allItems.count { it.isTunnelVerified }} · осталось: ${allItems.count { it.needsNativeTunnelCheck }}"
-                    if (allItems.any { it.city.isBlank() } && scanAllProtocols) {
-                        geoLoading = true
-                        try {
-                            val countryItems = repo.resolveCountries(allItems.take(48).filter { it.city.isBlank() }) { resolved ->
-                                withContext(Dispatchers.Main) {
-                                    allItems = allItems.map { current ->
-                                        if (current.host == resolved.host) current.copy(
-                                            country = current.country.ifBlank { resolved.country },
-                                            countryCode = current.countryCode.ifBlank { resolved.countryCode },
-                                            city = current.city.ifBlank { resolved.city }
-                                        ) else current
-                                    }
-                                }
-                            }
-                            persistAndSave(mergeResolvedGeoResults(allItems, countryItems))
-                        } catch (_: Exception) {
-                            sourceProgress += " · геоданные временно недоступны"
-                        } finally {
-                            geoLoading = false
-                        }
+                )
+                channel.close()
+                workers.joinAll()
+                val latest = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
+                val stats = withContext(Dispatchers.IO) { repo.snapshotStats() }
+                allItems = latest
+                totalStoredCount = stats.first
+                totalVerifiedCount = stats.second
+                sourceStatus = "Поиск и автоматическая проверка завершены"
+                sourceProgress = "В этом запуске найдено $discoveredCount · проверено $checkedCount · рабочих $verifiedCount · всего в SQLite $totalStoredCount"
+                if (fetched.sourceErrors.isNotEmpty()) {
+                    sourceProgress += " · ошибок источников: ${fetched.sourceErrors.size}"
+                }
+                if (discoveredCount == 0) {
+                    errorMessage = if (fetched.sourceErrors.isNotEmpty()) {
+                        "Не удалось получить конфигурации из части источников. Проверь интернет и повтори поиск."
+                    } else {
+                        "Источники не содержат новых уникальных конфигураций выбранных протоколов."
                     }
                 }
-            } catch (_: Exception) {
-                sourceStatus = "Сканирование прервано"
-                errorMessage = "Не удалось завершить сканирование. Данные, уже сохранённые на устройстве, не удалены."
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                channel.close()
+                workers.forEach { it.cancel() }
+                sourceStatus = "Потоковое сканирование прервано"
+                errorMessage = "Сканирование остановлено: ${error.message?.take(100) ?: "ошибка обработки"}. Уже проверенные записи сохранены в SQLite."
             } finally {
+                channel.close()
+                workers.forEach { it.cancel() }
                 loading = false
                 checkingCount = 0
             }
@@ -692,8 +687,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "stats") {
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-                    MetricCard("Найдено", allItems.size.toString(), "конфигураций", Icons.Default.Public, Modifier.weight(1f), AccentCyan)
-                    MetricCard("Проверен", allItems.count { it.isTunnelVerified }.toString(), "туннель работает", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
+                    MetricCard("Найдено", totalStoredCount.toString(), "в SQLite", Icons.Default.Public, Modifier.weight(1f), AccentCyan)
+                    MetricCard("Рабочих", totalVerifiedCount.toString(), "подтверждённый туннель", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
                     MetricCard("Средняя задержка", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), AccentCyanSoft)
                 }
             }
@@ -775,7 +770,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     else Icon(Icons.Default.NetworkCheck, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Column(horizontalAlignment = Alignment.Start) {
-                        Text(if (autoCheckRunning) "Проверка туннелей…" else "Проверить следующие 48", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(if (autoCheckRunning) "Проверка туннелей…" else "Проверить все ожидающие", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text("$pendingNative SOCKS4/SOCKS5/HTTP/HTTPS/VLESS TCP+TLS требуют проверки или повторной проверки", fontSize = 11.sp, color = TextMuted)
                     }
                 }
@@ -801,11 +796,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
-                    Text("Экспортируются все найденные уникальные конфигурации, включая непроверенные. Проверка и её статус сохраняются отдельно.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
-                    OutlinedButton(onClick = { onCopyAllJson(exportItems) }, enabled = exportItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Text("JSON берётся напрямую из SQLite: все уникальные конфигурации с подтверждённым HTTPS-туннелем. Непроверенные и недоступные узлы исключаются.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                    OutlinedButton(onClick = onCopyAllJson, enabled = totalVerifiedCount > 0 || allItems.any { it.isExportReady }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.ContentCopy, null, tint = AccentCyan)
                         Spacer(Modifier.width(8.dp))
-                        Text("Сохранить JSON-файл", color = AccentCyan)
+                        Text("Сохранить JSON всех рабочих конфигураций", color = AccentCyan)
                     }
                     }
                 }

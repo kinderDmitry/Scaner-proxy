@@ -136,6 +136,17 @@ class ProxyItemTest {
     }
 
     @Test
+    fun onlyVerifiedUniqueConfigurationsBelongInWorkingExport() {
+        val verified = item("Проверен через generate_204 · HTTP 204", 85)
+        val pending = item("Не проверен", null).copy(id = "pending", rawConfig = "socks5://pending")
+        val failed = item("Проверка generate_204 не пройдена", null).copy(id = "failed", rawConfig = "socks5://failed")
+        val duplicates = listOf(verified, verified.copy(id = "duplicate"), pending, failed)
+        val exported = verifiedExportItems(duplicates)
+        assertEquals(1, exported.size)
+        assertTrue(exported.single().isExportReady)
+    }
+
+    @Test
     fun onlySuccessfulTunnelProbeIsEligibleForHappExport() {
         val verified = item("Проверен через generate_204 · HTTP 204", 85)
         val tcpOnly = item("TCP доступен · скорость туннеля не измерена: нужен core VLESS", 24)
