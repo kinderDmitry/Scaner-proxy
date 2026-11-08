@@ -429,6 +429,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         sourceStatus = "Подключаемся к открытым источникам"
         sourceProgress = "Потоковый поиск · проверка начинается сразу после обнаружения"
         scope.launch {
+            val savedFavorites = withContext(Dispatchers.IO) { repo.loadFavorites() }
             val channel = Channel<ProxyItem>(capacity = 128)
             var discoveredCount = 0
             var checkedCount = 0
@@ -441,7 +442,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(checked)) }
                             val previous = allItems.firstOrNull { it.rawConfig.trim() == checked.rawConfig.trim() }
                             allItems = (allItems.filterNot { it.rawConfig.trim() == checked.rawConfig.trim() } +
-                                checked.copy(favorite = previous?.favorite ?: false)).takeLast(5000)
+                                checked.copy(favorite = previous?.favorite ?: (checked.id in savedFavorites))).takeLast(5000)
                             checkedCount++
                             if (checked.isTunnelVerified) verifiedCount++
                             if (checkedCount % 20 == 0) {
