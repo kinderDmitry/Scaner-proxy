@@ -413,6 +413,9 @@ class ProxyRepository(private val context: Context) {
                     val response = readExact(input, 8)
                     if (response.size != 8 || (response[1].toInt() and 0xff) != 90) throw java.io.IOException("SOCKS4a CONNECT отказал")
                 }
+                "VLESS" -> {
+                    tunnel = VlessTcpTls.openTunnel(item.rawConfig, item.host, item.port, targetHost, targetPort)
+                }
                 "HTTP", "HTTPS" -> {
                     if (item.protocol.equals("HTTPS", true)) {
                         val ssl = (javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory).createSocket(socket, item.host, item.port, true) as javax.net.ssl.SSLSocket
@@ -434,7 +437,7 @@ class ProxyRepository(private val context: Context) {
                         ?: throw java.io.IOException("Некорректный ответ HTTP proxy")
                     if (status != 200) throw java.io.IOException("HTTP CONNECT отказал: $status")
                 }
-                else -> throw java.io.IOException("Для ${item.protocol} требуется встроенное sing-box ядро")
+                else -> throw java.io.IOException("Протокол ${item.protocol} пока не поддерживается для проверки туннеля")
             }
             val tls = (javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory).createSocket(tunnel, targetHost, targetPort, true) as javax.net.ssl.SSLSocket
             tls.soTimeout = 5500
@@ -1024,11 +1027,11 @@ data class ProxyItem(
     val isTcpReachable: Boolean get() =
         checkStatus.startsWith("TCP доступен") || isTunnelVerified
 
-    /** A real HTTP 204 round-trip through HTTP/SOCKS; raw TCP checks do not qualify. */
+    /** A real HTTP 204 round-trip through a supported proxy protocol; raw TCP checks do not qualify. */
     val isTunnelVerified: Boolean get() = checkStatus.startsWith("Проверен через generate_204") || checkStatus.startsWith("Проверен через HTTPS-туннель")
 
     val isChecked: Boolean get() = checkedAt != null
-    val supportsNativeTunnelCheck: Boolean get() = protocol.uppercase(Locale.ROOT) in setOf("SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+    val supportsNativeTunnelCheck: Boolean get() = protocol.uppercase(Locale.ROOT) in setOf("SOCKS4", "SOCKS5", "HTTP", "HTTPS", "VLESS")
     /** Retry unverified native-protocol endpoints after 10 minutes; TCP reachability is not completion. */
     val needsNativeTunnelCheck: Boolean get() = supportsNativeTunnelCheck && !isTunnelVerified &&
         (checkedAt == null || System.currentTimeMillis() - checkedAt >= 10 * 60 * 1000L)
