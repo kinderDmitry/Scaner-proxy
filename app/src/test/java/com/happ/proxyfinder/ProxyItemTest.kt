@@ -298,4 +298,39 @@ class ProxyItemTest {
         assertEquals("user+tag" to "p+ass", parseProxyCredentials("socks://user+tag:p+ass@192.0.2.13:1080"))
     }
 
+
+    @Test
+    fun happSocksExportAddsEmptyCredentialsAndCountryFlagToTheName() {
+        val germany = ProxyItem(
+            id = "de", host = "203.0.113.10", port = 1080, protocol = "SOCKS5",
+            source = "test", rawConfig = "socks5://203.0.113.10:1080",
+            country = "Германия", countryCode = "DE"
+        )
+        assertEquals(
+            "socks://:@203.0.113.10:1080#%F0%9F%87%A9%F0%9F%87%AA%20Германия",
+            namedConfigForImport(germany)
+        )
+    }
+
+    @Test
+    fun happSocksExportPreservesRealCredentialsAndReplacesOldCountryLabel() {
+        val germany = ProxyItem(
+            id = "de-auth", host = "proxy.example", port = 1080, protocol = "SOCKS5",
+            source = "test", rawConfig = "socks5://alice:secret@proxy.example:1080#old-name",
+            country = "Germany", countryCode = "DE"
+        )
+        assertEquals(
+            "socks://alice:secret@proxy.example:1080#%F0%9F%87%A9%F0%9F%87%AA%20Germany",
+            namedConfigForImport(germany)
+        )
+    }
+
+    @Test
+    fun happExportDoesNotRewriteSocks4OrOtherProtocols() {
+        val socks4 = ProxyItem("s4", "192.0.2.1", 1080, "SOCKS4", "test", "socks4://192.0.2.1:1080", country = "Germany", countryCode = "DE")
+        val vless = ProxyItem("v", "example.com", 443, "VLESS", "test", "vless://id@example.com:443", country = "Germany", countryCode = "DE")
+        assertEquals("socks4://192.0.2.1:1080", namedConfigForImport(socks4))
+        assertEquals("vless://id@example.com:443", namedConfigForImport(vless))
+    }
+
 }
