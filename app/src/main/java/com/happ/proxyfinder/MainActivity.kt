@@ -730,7 +730,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricCard("Найдено", totalStoredCount.toString(), "в SQLite", Icons.Default.Public, Modifier.weight(1f), AccentCyan)
                     MetricCard("Рабочих", totalVerifiedCount.toString(), "подтверждённый туннель", Icons.Default.CheckCircle, Modifier.weight(1f), Green)
-                    MetricCard("Средняя задержка", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), AccentCyanSoft)
+                    MetricCard("Средний пинг", averageLatency(allItems), "проверенные узлы", Icons.Default.Speed, Modifier.weight(1f), AccentCyanSoft)
                 }
             }
             item(key = "status") {
@@ -850,7 +850,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Результаты", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("Сначала самые быстрые по задержке", color = TextMuted, fontSize = 12.sp)
+                        Text("Сначала самые быстрые по пингу", color = TextMuted, fontSize = 12.sp)
                     }
                     Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF142B3D)).padding(horizontal = 11.dp, vertical = 7.dp)) {
                         Text("${visible.size} узлов", color = AccentCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -1104,7 +1104,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallMetric(
-                    if (item.isTunnelVerified) "Задержка" else if (item.checkStatus.startsWith("TCP доступен")) "TCP-задержка" else "Задержка",
+                    "Пинг",
                     item.latencyMs?.let { if (item.isTunnelVerified) "$it мс" else if (item.checkStatus.startsWith("TCP доступен")) "$it мс" else "—" } ?: "—",
                     Icons.Default.Speed, Modifier.weight(1f)
                 )
