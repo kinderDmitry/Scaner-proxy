@@ -63,7 +63,7 @@ class VlessTcpTlsTest {
             0xA4.toByte(), 0xB5.toByte(), 0xC6.toByte(), 0xD7.toByte(),
             0xE8.toByte(), 0xF9.toByte(), 0x40, 0x12,
             0x8A.toByte(), 0xBC.toByte(), 0x12, 0x34, 0x56, 0x78, 0x90.toByte(), 0xAB.toByte(),
-            0, 1, 1, 0xBB.toByte(), 2, 14,
+            0, 1, 1, 0xBB.toByte(), 2, 15,
             'w'.code.toByte(), 'w'.code.toByte(), 'w'.code.toByte(), '.'.code.toByte(),
             'g'.code.toByte(), 's'.code.toByte(), 't'.code.toByte(), 'a'.code.toByte(),
             't'.code.toByte(), 'i'.code.toByte(), 'c'.code.toByte(), '.'.code.toByte(),
