@@ -51,7 +51,8 @@ class VlessTcpTlsTest {
             "vless://$uuid@example.com:0?security=tls",
             "vless://$uuid@:443?security=tls",
             "vless://$uuid@example.com:443?security=tls&type=tcp&type=ws",
-            "vless://$uuid@example.com:443?security=none"
+            "vless://$uuid@example.com:443?security=none",
+            "vless://$uuid@999.1.1.1:443?security=tls"
         )
         invalid.forEach { assertNull("Must reject $it", VlessTcpTls.parse(it)) }
     }
