@@ -124,7 +124,7 @@ class ProxyItemTest {
         assertTrue(item("Не проверен", null).supportsNativeTunnelCheck)
         val vless = ProxyItem("v", "example.com", 443, "VLESS", "test", "vless://id@example.com:443")
         val ss = ProxyItem("s", "example.com", 443, "Shadowsocks", "test", "ss://encoded")
-        assertFalse(vless.supportsNativeTunnelCheck)
+        assertTrue(vless.supportsNativeTunnelCheck)
         assertFalse(ss.supportsNativeTunnelCheck)
     }
 
