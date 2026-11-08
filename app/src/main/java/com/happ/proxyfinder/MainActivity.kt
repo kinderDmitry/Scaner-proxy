@@ -229,8 +229,13 @@ internal fun proxyDisplayName(item: ProxyItem): String {
 
 internal fun namedConfigForImport(item: ProxyItem): String {
     val normalized = normalizeProxySchemeForHapp(item.rawConfig)
+    val label = proxyDisplayName(item)
     if (!item.protocol.equals("SOCKS5", ignoreCase = true) || !normalized.startsWith("socks://", ignoreCase = true)) {
-        return normalized
+        // URI-based protocols use the fragment as the node label in HAPP. Replace any
+        // feed-provided name so imported nodes follow the same location-only naming rule.
+        return if (normalized.contains("://") && label.isNotBlank()) {
+            normalized.substringBefore("#") + "#" + encodeUriComponent(label)
+        } else normalized
     }
 
     // Build the endpoint from parsed fields so full-Base64 SOCKS imports are normalized too.
