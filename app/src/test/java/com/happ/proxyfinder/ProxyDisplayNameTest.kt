@@ -45,6 +45,7 @@ class ProxyDisplayNameTest {
     fun happSocksImportLabelIncludesCity() {
         val config = namedConfigForImport(
             item("Германия", "DE", "Франкфурт").copy(
+                host = "example.com",
                 protocol = "SOCKS5",
                 rawConfig = "socks5://example.com:1080"
             )
