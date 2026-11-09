@@ -704,11 +704,6 @@ class ProxyRepository(private val context: Context) {
             item.copy(country = item.country.ifBlank { geo.first },
                 countryCode = item.countryCode.ifBlank { geo.second }, city = item.city.ifBlank { geo.third })
         }
-        items.zip(resolved).forEach { (original, resolvedItem) ->
-            if (original.city.isBlank() && (resolvedItem.country.isNotBlank() || resolvedItem.city.isNotBlank())) {
-                onResolved(resolvedItem)
-            }
-        }
         resolved
     }
 
@@ -733,7 +728,7 @@ class ProxyRepository(private val context: Context) {
                     val bytes = address.address
                     // Exclude IPv6 unique-local (fc00::/7), link-local and documentation ranges.
                     val first = bytes.firstOrNull()?.toInt()?.and(0xFF) ?: 0
-                    !(first and 0xFE == 0xFC) && !(first == 0x20 && (bytes.getOrNull(1)?.toInt()?.and(0xFF) == 0x01) &&
+                    first != 0xFC && first != 0xFD && !(first == 0x20 && (bytes.getOrNull(1)?.toInt()?.and(0xFF) == 0x01) &&
                         (bytes.getOrNull(2)?.toInt()?.and(0xFF) == 0x0D) &&
                         (bytes.getOrNull(3)?.toInt()?.and(0xFF) == 0xB8))
                 }
