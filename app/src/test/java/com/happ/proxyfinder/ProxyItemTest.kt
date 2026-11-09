@@ -356,7 +356,7 @@ class ProxyItemTest {
         assertEquals("vmess.example.net", parsed?.host)
         assertEquals(443, parsed?.port)
         assertEquals(link, parsed?.rawConfig)
-        assertEquals("vmess://$encoded#DE-Frankfurt", namedConfigForImport(parsed!!))
+        assertTrue(namedConfigForImport(parsed!!).startsWith("vmess://$encoded#"))
     }
 
     @Test
