@@ -134,7 +134,7 @@ class ProxyRepository(private val context: Context) {
             buffered.reset()
             if (sampleLength <= 0) throw java.io.IOException("Пустой ответ")
             val sample = String(sampleBytes, 0, sampleLength, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\t', '\r', '\n')
-            val hasConfigScheme = Regex("(?i)^(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://").containsMatchIn(sample)
+            val hasConfigScheme = Regex("(?i)^(vless|vmess|trojan|ss|ssr|socks|socks4|socks4a|socks5|http|https|hysteria|hysteria2|hy2|tuic|anytls|juicity|ssh|wireguard)://").containsMatchIn(sample)
             val compactSample = sample.filterNot(Char::isWhitespace).take(128)
             val looksBase64 = compactSample.length >= 32 && compactSample.all { it.isLetterOrDigit() || it in "+/=_-" }
             val decodedStream = if (source.protocol == null && !hasConfigScheme &&
@@ -959,7 +959,7 @@ internal object ConfigParser {
     fun parseConfig(rawLine: String, sourceName: String = "Источник"): ProxyItem? {
         val line = rawLine.trim().removePrefix("\uFEFF")
         if (line.isBlank() || line.startsWith("#") || line.startsWith("//")) return null
-        val match = schemeRegex.find(line) ?: return null
+        val match = schemeRegex.find(line) ?: return parseStructuredNode(line, sourceName)
         val scheme = match.groupValues[1].lowercase(Locale.ROOT)
         val protocol = when (scheme) {
             "hy2", "hysteria2" -> "Hysteria2"
@@ -1026,6 +1026,38 @@ internal object ConfigParser {
         )
     }
 
+    /**
+     * Reads a single Clash/sing-box style JSON proxy object. Full profile documents
+     * containing multiple outbounds are intentionally not guessed as one proxy.
+     */
+    private fun parseStructuredNode(line: String, sourceName: String): ProxyItem? {
+        if (!line.startsWith("{")) return null
+        val json = runCatching { JSONObject(line) }.getOrNull() ?: return null
+        val type = json.optString("type").ifBlank { json.optString("protocol") }.lowercase(Locale.ROOT)
+        val protocol = when (type) {
+            "socks", "socks5" -> "SOCKS5"
+            "socks4", "socks4a" -> "SOCKS4"
+            "shadowsocks", "ss" -> "Shadowsocks"
+            "shadowsocksr", "ssr" -> "ShadowsocksR"
+            "hysteria2", "hy2" -> "Hysteria2"
+            "hysteria" -> "Hysteria"
+            "wireguard" -> "WireGuard"
+            "anytls" -> "AnyTLS"
+            "http", "https", "vless", "vmess", "trojan", "tuic", "ssh", "juicity" -> type.uppercase(Locale.ROOT)
+            else -> return null
+        }
+        val endpoint = json.optString("server").ifBlank { json.optString("address").ifBlank { json.optString("add") } }
+            .trim().removePrefix("[").removeSuffix("]")
+        val endpointPort = json.optInt("server_port", json.optInt("port", -1))
+        if (endpoint.isBlank() || endpointPort !in 1..65535) return null
+        val title = json.optString("tag").ifBlank { json.optString("name") }
+        val countryInfo = parseCountryFromTitle(title)
+        return ProxyItem(
+            id = stableId(line), host = endpoint, port = endpointPort, protocol = protocol,
+            source = "Импорт · $sourceName", rawConfig = line, title = title.take(48),
+            country = countryInfo.first, countryCode = countryInfo.second
+        )
+    }
     private fun parseCountryFromTitle(title: String): Pair<String, String> {
         val points = title.codePoints().toArray()
         for (i in 0 until (points.size - 1).coerceAtLeast(0)) {
