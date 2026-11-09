@@ -245,14 +245,16 @@ class ProxyRepository(private val context: Context) {
             }
             if (text.isBlank()) throw java.io.IOException("Пустой ответ")
             val decoded = decodeSubscriptionIfNeeded(text)
-            val seen = HashSet<String>()
-            return decoded.lineSequence().mapNotNull { raw ->
-                val line = raw.trim().substringBefore(" | ").trim()
-                if (line.isBlank()) null else {
-                    val candidate = if (source.protocol != null && !line.contains("://")) "${source.protocol}://$line" else line
-                    ConfigParser.parseConfig(candidate, source.name)
-                }
-            }.filter { seen.add(it.rawConfig) }.toList()
+            val parsed = ConfigParser.parseConfigs(decoded, source.name)
+            val candidates = if (source.protocol == null) parsed else parsed.ifEmpty {
+                decoded.lineSequence().mapNotNull { raw ->
+                    val line = raw.trim().substringBefore(" | ").trim()
+                    if (line.isBlank()) null else ConfigParser.parseConfig(
+                        source.protocol + "://" + line, source.name
+                    )
+                }.toList()
+            }
+            return candidates.distinctBy { it.rawConfig }
         } finally {
             connection.disconnect()
         }
@@ -1020,6 +1022,61 @@ internal object ConfigParser {
             source = "Сеть · " + sourceName, rawConfig = line, title = title.take(48),
             checkStatus = "Не проверен", country = countryInfo.first, countryCode = countryInfo.second
         )
+    }
+
+    /** Parses URI subscriptions, sing-box JSON profiles and Clash YAML proxy lists. */
+    fun parseConfigs(rawText: String, sourceName: String = "Импорт"): List<ProxyItem> {
+        val text = rawText.trim().removePrefix("\uFEFF")
+        if (text.isBlank()) return emptyList()
+        val jsonNodes = runCatching {
+            when {
+                text.startsWith("[") -> JSONArray(text).let { array ->
+                    (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+                }
+                text.startsWith("{") -> {
+                    val root = JSONObject(text)
+                    val nodes = root.optJSONArray("outbounds") ?: root.optJSONArray("proxies")
+                    if (nodes != null) (0 until nodes.length()).mapNotNull { nodes.optJSONObject(it) }
+                    else listOf(root)
+                }
+                else -> emptyList()
+            }
+        }.getOrDefault(emptyList())
+        if (jsonNodes.isNotEmpty()) {
+            return jsonNodes.mapNotNull { node -> parseStructuredNode(node.toString(), sourceName) }
+                .distinctBy { it.rawConfig }
+        }
+
+        // Clash YAML: collect each list item and extract only endpoint metadata.
+        if (text.lineSequence().any { it.trim() == "proxies:" }) {
+            val result = mutableListOf<ProxyItem>()
+            var block = mutableListOf<String>()
+            fun flush() {
+                if (block.isEmpty()) return
+                val values = JSONObject()
+                block.forEach { line ->
+                    val match = Regex("""^\s*(name|tag|type|server|port|server_port)\s*:\s*(.*?)\s*$""").find(line) ?: return@forEach
+                    val value = match.groupValues[2].trim().removeSurrounding("\"").removeSurrounding("'").substringBefore(" #").trim()
+                    val key = if (match.groupValues[1] == "port") "server_port" else match.groupValues[1]
+                    values.put(key, value)
+                }
+                parseStructuredNode(values.toString(), sourceName)?.let(result::add)
+                block = mutableListOf()
+            }
+            text.lineSequence().forEach { line ->
+                if (line.trimStart().startsWith("- ")) {
+                    flush()
+                    block.add(line.trimStart().removePrefix("- "))
+                } else if (block.isNotEmpty()) block.add(line)
+            }
+            flush()
+            if (result.isNotEmpty()) return result.distinctBy { it.rawConfig }
+        }
+
+        return text.lineSequence().mapNotNull { raw ->
+            val line = raw.trim().removePrefix("\uFEFF").substringBefore(" | ").trim()
+            if (line.isBlank()) null else parseConfig(line, sourceName)
+        }.distinctBy { it.rawConfig }
     }
 
     /**
