@@ -202,20 +202,13 @@ class MainActivity : ComponentActivity() {
 internal fun normalizeProxySchemeForHapp(config: String): String {
     val value = config.removePrefix("\uFEFF").trim()
     if (value.isEmpty()) return value
-
-    // Config feeds may vary URI scheme casing; HAPP receives canonical lowercase schemes.
-    // Only the scheme is normalized. Credentials, Base64 payload and URI parameters stay intact.
     val match = Regex("^([A-Za-z][A-Za-z0-9+.-]*)://").find(value) ?: return value
     val originalScheme = match.groupValues[1]
     val scheme = originalScheme.lowercase(java.util.Locale.ROOT)
-    val canonicalScheme = when (scheme) {
-        "socks5" -> "socks"
-        "socks", "socks4", "vmess", "vless", "trojan", "ss",
-        "hysteria2", "hy2", "tuic", "http", "https" -> scheme
-        else -> originalScheme
-    }
+    val canonicalScheme = if (scheme == "socks5") "socks" else scheme
+    // The regex consumes the complete `scheme://` prefix; restore the delimiter.
     return if (canonicalScheme == originalScheme) value
-    else canonicalScheme + value.substring(match.range.last + 1)
+    else canonicalScheme + "://" + value.substring(match.range.last + 1)
 }
 
 /** Returns a clean, HAPP-compatible configuration string for single-item copy actions. */
