@@ -1281,15 +1281,23 @@ internal fun mergeResolvedGeoResults(original: List<ProxyItem>, resolved: List<P
 
 /** Decodes RFC 4648 Base64 without requiring Android API 26 java.util.Base64. */
 private fun decodeBase64Utf8(value: String): String? {
-    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     val normalized = value.trim().replace('-', '+').replace('_', '/')
-    if (normalized.isEmpty() || normalized.any { it != '=' && alphabet.indexOf(it) < 0 }) return null
+    if (normalized.isEmpty() || normalized.length % 4 == 1) return null
+    if (!normalized.matches(Regex("[A-Za-z0-9+/]*={0,2}"))) return null
+    val unpadded = normalized.substringBefore('=')
     val output = java.io.ByteArrayOutputStream()
     var accumulator = 0
     var bitCount = 0
-    for (character in normalized) {
-        if (character == '=') break
-        accumulator = (accumulator shl 6) or alphabet.indexOf(character)
+    for (character in unpadded) {
+        val digit = when (character) {
+            in 'A'..'Z' -> character.code - 'A'.code
+            in 'a'..'z' -> character.code - 'a'.code + 26
+            in '0'..'9' -> character.code - '0'.code + 52
+            '+' -> 62
+            '/' -> 63
+            else -> return null
+        }
+        accumulator = (accumulator shl 6) or digit
         bitCount += 6
         if (bitCount >= 8) {
             bitCount -= 8
@@ -1297,8 +1305,11 @@ private fun decodeBase64Utf8(value: String): String? {
             accumulator = accumulator and ((1 shl bitCount) - 1)
         }
     }
-    if (output.size() == 0) return null
-    val decoded = String(output.toByteArray(), Charsets.UTF_8)
+    if (output.size() == 0 || bitCount == 6) return null
+    val bytes = output.toByteArray()
+    val decoded = String(bytes, Charsets.UTF_8)
+    // Reject malformed UTF-8 instead of silently replacing invalid sequences.
+    if (!decoded.toByteArray(Charsets.UTF_8).contentEquals(bytes)) return null
     return decoded.takeIf { it.none(Char::isISOControl) }
 }
 
