@@ -589,7 +589,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    val protocols = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+    val protocols = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2", "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
     val countries = remember(allItems) { listOf("Все страны") + allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
     val visible = remember(allItems, query, selectedProtocols, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
         val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}"
@@ -725,9 +725,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     if (scanScope == "Весь мир") {
                         Text("Протоколы для поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                        Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == scanFilters.size) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 11.sp)
-                        val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "Hysteria2", "TUIC", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+                        val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2", "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
                         MultiSelectChips(
                             items = scanFilters,
                             selected = scanFiltersSelected,
