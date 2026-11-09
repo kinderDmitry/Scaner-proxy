@@ -382,4 +382,30 @@ class ProxyItemTest {
         assertEquals(8388, parsed?.port)
     }
 
+
+    @Test
+    fun parserHandlesUppercaseVmessAndShadowsocksSchemes() {
+        val vmessJson = """{"add":"vmess.example.net","port":443,"id":"00000000-0000-0000-0000-000000000000","aid":0,"net":"tcp","type":"none","tls":""}"""
+        val vmessPayload = java.util.Base64.getEncoder().withoutPadding()
+            .encodeToString(vmessJson.toByteArray(Charsets.UTF_8))
+        val vmess = ConfigParser.parseConfig("VMESS://$vmessPayload")
+        assertEquals("VMESS", vmess?.protocol)
+        assertEquals("vmess.example.net", vmess?.host)
+        assertEquals(443, vmess?.port)
+
+        val ssCredentials = java.util.Base64.getEncoder().withoutPadding()
+            .encodeToString("aes-128-gcm:secret".toByteArray(Charsets.UTF_8))
+        val shadowsocks = ConfigParser.parseConfig("SS://$ssCredentials@ss.example.net:8388")
+        assertEquals("Shadowsocks", shadowsocks?.protocol)
+        assertEquals("ss.example.net", shadowsocks?.host)
+        assertEquals(8388, shadowsocks?.port)
+    }
+
+    @Test
+    fun happExportCanonicalizesVmessAndShadowsocksSchemeCaseOnly() {
+        assertEquals("vmess://payload#node", normalizeProxySchemeForHapp("VMESS://payload#node"))
+        assertEquals("ss://payload", normalizeProxySchemeForHapp("SS://payload"))
+        assertEquals("socks://user:pass@host:1080", normalizeProxySchemeForHapp("SOCKS5://user:pass@host:1080"))
+    }
+
 }
