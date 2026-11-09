@@ -612,6 +612,11 @@ class ProxyRepository(private val context: Context) {
         completed
     }
 
+    /**
+     * Resolves the public IP behind each proxy endpoint before querying GeoIP.
+     * Hostnames are DNS-resolved; IPv4 and IPv6 literals are supported. Private,
+     * loopback and link-local addresses are deliberately never sent to GeoIP APIs.
+     */
     suspend fun resolveCountries(items: List<ProxyItem>, onResolved: suspend (ProxyItem) -> Unit): List<ProxyItem> = withContext(Dispatchers.IO) {
         val cached = runCatching {
             val json = JSONObject(prefs.getString("geo_cache", "{}"))
@@ -619,68 +624,119 @@ class ProxyRepository(private val context: Context) {
                 json.keys().forEach { host ->
                     val value = json.optJSONObject(host) ?: return@forEach
                     val country = value.optString("country")
-                    if (country.isNotBlank()) put(host, Triple(country, value.optString("code"), value.optString("city")))
+                    if (country.isNotBlank() && country != "null") {
+                        put(host, Triple(country, value.optString("code").takeUnless { it == "null" }.orEmpty(),
+                            value.optString("city").takeUnless { it == "null" }.orEmpty()))
+                    }
                 }
             }
         }.getOrDefault(emptyMap())
-        val candidates = items.filter {
-            it.city.isBlank() && (isIpv4(it.host) || isResolvableHostname(it.host)) && (!cached.containsKey(it.host) || cached[it.host]?.third.isNullOrBlank())
-        }.distinctBy { it.host }.take(MAX_GEO_LOOKUPS)
+
+        // Do not cap the whole run at 120 entries: large scans must eventually
+        // resolve every unique endpoint. Concurrency is bounded to protect APIs.
+        val candidates = items.asSequence()
+            .filter { it.city.isBlank() && it.host.isNotBlank() }
+            .distinctBy { it.host.lowercase(Locale.ROOT) }
+            .filter { cached[it.host]?.third.isNullOrBlank() }
+            .toList()
         val updated = java.util.concurrent.ConcurrentHashMap<String, Triple<String, String, String>>()
-        val gate = Semaphore(8)
+        val gate = Semaphore(5)
+
+        suspend fun lookupGeo(ip: String): Triple<String, String, String>? {
+            fun request(url: String, parse: (JSONObject) -> Triple<String, String, String>?): Triple<String, String, String>? {
+                val connection = URL(url).openConnection() as? java.net.HttpURLConnection ?: return null
+                return try {
+                    connection.connectTimeout = 3500
+                    connection.readTimeout = 4500
+                    connection.instanceFollowRedirects = true
+                    connection.useCaches = false
+                    connection.setRequestProperty("User-Agent", "PROXY-INTELLIGENCE-X/2.1 (Android)")
+                    val status = connection.responseCode
+                    if (status !in 200..299) return null
+                    val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText().take(16_384) }
+                    parse(JSONObject(body))
+                } finally {
+                    connection.disconnect()
+                }
+            }
+
+            val encodedIp = java.net.URLEncoder.encode(ip, "UTF-8")
+            request("https://ipwho.is/$encodedIp?fields=success,country,country_code,city") { json ->
+                if (!json.optBoolean("success")) return@request null
+                val country = json.optString("country").takeUnless { it.isBlank() || it == "null" }.orEmpty()
+                if (country.isBlank()) return@request null
+                Triple(country,
+                    json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
+                    json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+            } ?: request("https://ipapi.co/$encodedIp/json/") { json ->
+                val country = json.optString("country_name").takeUnless { it.isBlank() || it == "null" }.orEmpty()
+                if (country.isBlank() || json.has("error") && json.optBoolean("error")) return@request null
+                Triple(country,
+                    json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
+                    json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+            }
+        }
+
         coroutineScope {
             candidates.map { item -> async {
                 gate.withPermit {
-                    val foundCountry = runCatching {
-                        val url = URL("https://ipwho.is/${item.host}?fields=success,country,country_code,city")
-                        val conn = url.openConnection().apply {
-                            connectTimeout = 1800; readTimeout = 1800
-                            setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
-                        }
-                        val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText().take(16_384) })
-                        if (json.optBoolean("success")) {
-                            val country = json.optString("country").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-                            val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }
-                                ?.uppercase(Locale.ROOT).orEmpty()
-                            val city = json.optString("city").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-                            if (country.isNotBlank()) Triple(country, code, city) else null
-                        } else null
-                    }.getOrNull() ?: runCatching {
-                        // Secondary provider helps when the primary geo API rate-limits or rejects a host.
-                        val conn = URL("https://ipapi.co/${item.host}/json/").openConnection().apply {
-                            connectTimeout = 2800; readTimeout = 2800
-                            setRequestProperty("User-Agent", "HAPP-Proxy-Finder/1.2")
-                        }
-                        val json = JSONObject(conn.getInputStream().bufferedReader().use { it.readText().take(16_384) })
-                        val country = json.optString("country_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-                        val code = json.optString("country_code").takeIf { it.isNotBlank() && it != "null" }
-                            ?.uppercase(Locale.ROOT).orEmpty()
-                        val city = json.optString("city").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
-                        if (country.isNotBlank()) Triple(country, code, city) else null
-                    }.getOrNull()
-                    if (foundCountry != null) {
-                        updated[item.host] = foundCountry
-                        onResolved(item.copy(country = foundCountry.first, countryCode = foundCountry.second, city = foundCountry.third))
+                    val publicIp = resolvePublicEndpointIp(item.host) ?: return@withPermit
+                    val geo = runCatching { lookupGeo(publicIp) }.getOrNull()
+                    if (geo != null) {
+                        updated[item.host] = geo
+                        onResolved(item.copy(country = item.country.ifBlank { geo.first },
+                            countryCode = item.countryCode.ifBlank { geo.second }, city = item.city.ifBlank { geo.third }))
                     }
                 }
             } }.awaitAll()
         }
+
         val allGeo = cached + updated
         val cacheJson = JSONObject()
-        allGeo.forEach { (host, value) -> cacheJson.put(host, JSONObject().put("country", value.first).put("code", value.second).put("city", value.third)) }
+        allGeo.forEach { (host, value) ->
+            cacheJson.put(host, JSONObject().put("country", value.first).put("code", value.second).put("city", value.third))
+        }
         prefs.edit().putString("geo_cache", cacheJson.toString()).apply()
+
         val resolved = items.map { item ->
-            val country = allGeo[item.host]
-            if (country == null) item else item.copy(
-                country = item.country.ifBlank { country.first },
-                countryCode = item.countryCode.ifBlank { country.second },
-                city = item.city.ifBlank { country.third }
-            )
+            val geo = allGeo[item.host] ?: return@map item
+            item.copy(country = item.country.ifBlank { geo.first },
+                countryCode = item.countryCode.ifBlank { geo.second }, city = item.city.ifBlank { geo.third })
         }
         items.zip(resolved).forEach { (original, resolvedItem) ->
-            if (original.city.isBlank() && (resolvedItem.country.isNotBlank() || resolvedItem.city.isNotBlank())) onResolved(resolvedItem)
+            if (original.city.isBlank() && (resolvedItem.country.isNotBlank() || resolvedItem.city.isNotBlank())) {
+                onResolved(resolvedItem)
+            }
         }
         resolved
+    }
+
+    /** Returns a globally routable IP literal for a proxy host, resolving DNS when needed. */
+    private fun resolvePublicEndpointIp(host: String): String? {
+        val clean = host.trim().removePrefix("[").removeSuffix("]").substringBefore('%')
+        if (clean.isBlank() || clean.length > 253) return null
+        val addresses = runCatching {
+            when {
+                clean.contains(':') -> listOf(java.net.InetAddress.getByName(clean)) // IPv6 literal only
+                isIpv4(clean) -> listOf(java.net.InetAddress.getByName(clean))
+                isResolvableHostname(clean) -> java.net.InetAddress.getAllByName(clean).toList()
+                else -> emptyList()
+            }
+        }.getOrDefault(emptyList())
+        return addresses.firstOrNull { address ->
+            val value = address.hostAddress.substringBefore('%')
+            !address.isAnyLocalAddress && !address.isLoopbackAddress && !address.isLinkLocalAddress &&
+                !address.isSiteLocalAddress && !address.isMulticastAddress &&
+                if (address is java.net.Inet4Address) isIpv4(value)
+                else {
+                    val bytes = address.address
+                    // Exclude IPv6 unique-local (fc00::/7), link-local and documentation ranges.
+                    val first = bytes.firstOrNull()?.toInt()?.and(0xFF) ?: 0
+                    !(first and 0xFE == 0xFC) && !(first == 0x20 && (bytes.getOrNull(1)?.toInt()?.and(0xFF) == 0x01) &&
+                        (bytes.getOrNull(2)?.toInt()?.and(0xFF) == 0x0D) &&
+                        (bytes.getOrNull(3)?.toInt()?.and(0xFF) == 0xB8))
+                }
+        }?.hostAddress?.substringBefore('%')
     }
 
     private fun isIpv4(host: String): Boolean {
@@ -898,7 +954,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
 }
 
 internal object ConfigParser {
-    private val schemeRegex = Regex("^(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://", RegexOption.IGNORE_CASE)
+    private val schemeRegex = Regex("^(vless|vmess|trojan|ss|ssr|socks|socks4|socks4a|socks5|http|https|hysteria|hysteria2|hy2|tuic|anytls|juicity|ssh|wireguard)://", RegexOption.IGNORE_CASE)
 
     fun parseConfig(rawLine: String, sourceName: String = "Источник"): ProxyItem? {
         val line = rawLine.trim().removePrefix("\uFEFF")
@@ -907,12 +963,17 @@ internal object ConfigParser {
         val scheme = match.groupValues[1].lowercase(Locale.ROOT)
         val protocol = when (scheme) {
             "hy2", "hysteria2" -> "Hysteria2"
+            "hysteria" -> "Hysteria"
             "tuic" -> "TUIC"
             "ss" -> "Shadowsocks"
+            "ssr" -> "ShadowsocksR"
             "socks", "socks5" -> "SOCKS5"
-            "socks4" -> "SOCKS4"
+            "socks4", "socks4a" -> "SOCKS4"
             "http" -> "HTTP"
             "https" -> "HTTPS"
+            "anytls" -> "AnyTLS"
+            "juicity" -> "Juicity"
+            "wireguard" -> "WireGuard"
             else -> scheme.uppercase(Locale.ROOT)
         }
         val endpoint = runCatching {
@@ -932,7 +993,8 @@ internal object ConfigParser {
                     address to vmessPort
                 }
                 "ss" -> parseShadowsocksEndpoint(line.substringAfter("://"))
-                "socks", "socks5", "socks4" -> parseSocksEndpoint(line.substringAfter("://"))
+                "ssr" -> parseShadowsocksREndpoint(line.substringAfter("://"))
+                "socks", "socks5", "socks4", "socks4a" -> parseSocksEndpoint(line.substringAfter("://"))
                 else -> {
                     val uri = URI(line)
                     val host = uri.host ?: run {
@@ -941,7 +1003,12 @@ internal object ConfigParser {
                     }
                     val port = if (uri.port > 0) uri.port else {
                         val authority = line.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore('#').substringAfterLast('@')
-                        authority.substringAfterLast(':').toIntOrNull() ?: -1
+                        authority.substringAfterLast(':').toIntOrNull() ?: when (scheme) {
+                            "http" -> 80
+                            "https", "hysteria", "hysteria2", "hy2", "tuic", "anytls", "juicity" -> 443
+                            "ssh" -> 22
+                            else -> -1
+                        }
                     }
                     host to port
                 }
@@ -1116,6 +1183,18 @@ internal object ConfigParser {
                 label.lastOrNull()?.let { it.isLetterOrDigit() } == true &&
                 label.all { it.isLetterOrDigit() || it == '-' }
         }
+    }
+
+    /** Parses legacy ShadowsocksR links (Base64 of server:port:protocol:method:obfs:password). */
+    private fun parseShadowsocksREndpoint(payload: String): Pair<String, Int>? {
+        val decoded = decodeBase64Utf8(payload.substringBefore('#').trim()) ?: return null
+        val serverPart = decoded.substringBefore("/?").substringBefore('?')
+        val fields = serverPart.split(':')
+        if (fields.size < 6) return null
+        val host = fields[0].trim().removePrefix("[").removeSuffix("]")
+        val port = fields[1].toIntOrNull() ?: return null
+        if (host.isBlank() || port !in 1..65535) return null
+        return host to port
     }
 
     private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
