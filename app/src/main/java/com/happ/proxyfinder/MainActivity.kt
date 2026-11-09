@@ -724,10 +724,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
                     }
                     if (scanScope == "Весь мир") {
+                        val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2", "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
                         Text("Протоколы для поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == scanFilters.size) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 11.sp)
-                        val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2", "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
                         MultiSelectChips(
                             items = scanFilters,
                             selected = scanFiltersSelected,
