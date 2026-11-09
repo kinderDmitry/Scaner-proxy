@@ -82,7 +82,7 @@ class ProxyRepository(private val context: Context) {
             "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
             "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
             "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
-            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed"
+            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed" || source.protocol == null
             else -> false
         }
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
@@ -1054,6 +1054,25 @@ internal object ConfigParser {
     fun parseConfigs(rawText: String, sourceName: String = "Импорт"): List<ProxyItem> {
         val text = rawText.trim().removePrefix("\uFEFF")
         if (text.isBlank()) return emptyList()
+
+        // WireGuard and AmneziaWG share the standard peer Endpoint field in INI profiles.
+        if (text.contains("[Peer]", ignoreCase = true)) {
+            val endpoint = Regex("(?im)^\\s*Endpoint\\s*=\\s*(\\[[^]]+]|[^\\s:]+):(\\d+)\\s*$").find(text)
+            if (endpoint != null) {
+                val host = endpoint.groupValues[1].removePrefix("[").removeSuffix("]")
+                val port = endpoint.groupValues[2].toIntOrNull() ?: -1
+                if (host.isNotBlank() && port in 1..65535) {
+                    val title = Regex("(?m)^#\\s*(.+)$").find(text)?.groupValues?.get(1).orEmpty()
+                    val countryInfo = parseCountryFromTitle(title)
+                    return listOf(ProxyItem(
+                        id = stableId(text), host = host, port = port, protocol = "WireGuard",
+                        source = "Импорт · $sourceName", rawConfig = text, title = title.take(48),
+                        country = countryInfo.first, countryCode = countryInfo.second
+                    ))
+                }
+            }
+        }
+
         val jsonNodes = runCatching {
             when {
                 text.startsWith("[") -> JSONArray(text).let { array ->
