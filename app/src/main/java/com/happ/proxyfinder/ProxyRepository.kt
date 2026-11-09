@@ -44,7 +44,7 @@ internal class BoundedInputStream(input: InputStream, private val maxBytes: Long
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         val remaining = maxBytes - bytesRead
-        if (remaining <= 0L) return if (read() == -1) -1 else -1
+        if (remaining <= 0L) return read()
         val count = super.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
         if (count > 0) bytesRead += count
         return count
@@ -914,7 +914,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     }
 
     fun stats(): Pair<Int, Int> = readableDatabase.rawQuery(
-        "SELECT COUNT(*), SUM(CASE WHEN status LIKE 'Проверен через %HTTP 204%' THEN 1 ELSE 0 END) FROM proxy_results",
+        "SELECT COUNT(*), SUM(CASE WHEN (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') THEN 1 ELSE 0 END) FROM proxy_results",
         null
     ).use { cursor ->
         if (cursor.moveToFirst()) cursor.getInt(0) to cursor.getInt(1) else 0 to 0
@@ -925,7 +925,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
         val writer = java.io.OutputStreamWriter(output, Charsets.UTF_8)
         var count = 0
         writer.write("{\"format\":\"happ-proxy-finder\",\"version\":1,\"exportedAt\":${System.currentTimeMillis()},\"proxies\":[")
-        val sql = "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
+        val sql = "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') ORDER BY latency ASC, rowid DESC"
         readableDatabase.rawQuery(sql, null).use { cursor ->
             while (cursor.moveToNext()) {
                 fun string(name: String) = cursor.getString(cursor.getColumnIndexOrThrow(name)) ?: ""
@@ -1006,7 +1006,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     )
 
     fun readVerified(): List<ProxyItem> = readQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE status LIKE 'Проверен через %HTTP 204%' ORDER BY latency ASC, rowid DESC"
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') ORDER BY latency ASC, rowid DESC"
     )
 }
 
