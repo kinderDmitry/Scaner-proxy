@@ -658,7 +658,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("Фоновая проверка", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("HTTP/SOCKS5: проверка туннеля; остальные протоколы: пока только TCP-проверка", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
+                            Text("SOCKS4/5, HTTP(S), VLESS TCP+TLS: проверка HTTPS-туннеля; остальные: только TCP-доступность", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
                         }
                         Switch(
                             checked = backgroundMonitor,
