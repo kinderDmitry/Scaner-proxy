@@ -82,6 +82,7 @@ class ProxyRepository(private val context: Context) {
             "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
             "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
             "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
+            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed"
             else -> false
         }
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
@@ -257,7 +258,7 @@ class ProxyRepository(private val context: Context) {
     }
 
     private fun decodeSubscriptionIfNeeded(text: String): String {
-        val schemePattern = Regex("(?im)^\\s*(vless|vmess|trojan|ss|socks|socks4|socks5|http|https|hysteria2|hy2|tuic)://")
+        val schemePattern = Regex("(?im)^\\s*(vless|vmess|trojan|ss|ssr|socks|socks4|socks4a|socks5|http|https|hysteria|hysteria2|hy2|tuic|anytls|juicity|ssh|wireguard)://")
         if (schemePattern.containsMatchIn(text)) return text
         val compact = text.trim().replace("\\s".toRegex(), "")
         if (compact.length < 16 || !compact.matches(Regex("[A-Za-z0-9+/=_-]+"))) return text
@@ -817,7 +818,6 @@ class ProxyRepository(private val context: Context) {
     companion object {
         private const val SPEED_TEST_URL = "https://www.gstatic.com/generate_204"
         private const val MAX_SOURCE_BYTES = 8_000_000
-        private const val MAX_GEO_LOOKUPS = 120
     }
 }
 
