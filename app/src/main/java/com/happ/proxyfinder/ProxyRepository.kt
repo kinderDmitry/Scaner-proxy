@@ -918,9 +918,18 @@ internal object ConfigParser {
         val endpoint = runCatching {
             when (scheme) {
                 "vmess" -> {
-                    val payload = line.substringAfter("vmess://").substringBefore('#')
-                    val json = JSONObject(String(Base64.decode(padBase64(payload), Base64.DEFAULT), Charsets.UTF_8))
-                    json.optString("add") to json.optString("port").toIntOrNull()
+                    // VMess uses URL-safe Base64 in the wild; decode it with the same
+                    // RFC 4648 normalizer used by the other proxy URI parsers.
+                    val payload = line.substringAfter("vmess://").substringBefore('#').substringBefore('?').trim()
+                    val decoded = decodeBase64Utf8(payload) ?: return null
+                    val json = JSONObject(decoded)
+                    val address = json.optString("add").trim()
+                    val portValue = json.opt("port")
+                    val vmessPort = when (portValue) {
+                        is Number -> portValue.toInt()
+                        else -> portValue?.toString()?.toIntOrNull()
+                    }
+                    address to vmessPort
                 }
                 "ss" -> parseShadowsocksEndpoint(line.substringAfter("ss://"))
                 "socks", "socks5", "socks4" -> parseSocksEndpoint(line.substringAfter("://"))
@@ -1110,16 +1119,41 @@ internal object ConfigParser {
     }
 
     private fun parseShadowsocksEndpoint(payload: String): Pair<String, Int>? {
-        val decodedPart = if (!payload.substringBefore('@').contains(':') && !payload.contains('@')) {
-            runCatching { String(Base64.decode(padBase64(payload.substringBefore('#')), Base64.DEFAULT), Charsets.UTF_8) }.getOrNull() ?: payload
-        } else payload
-        val authority = decodedPart.substringAfterLast('@').substringBefore('?').substringBefore('#')
-        val hostPort = if (authority.startsWith("[")) {
+        val cleanPayload = payload.trim().substringBefore('#')
+        if (cleanPayload.isBlank()) return null
+
+        // Support both SIP002 (base64(method:password)@host:port) and the
+        // legacy fully-Base64-encoded method:password@host:port form.
+        val decodedPart = if (!cleanPayload.contains('@') && !cleanPayload.substringBefore('?').contains(':')) {
+            decodeBase64Utf8(cleanPayload.substringBefore('?')) ?: cleanPayload
+        } else cleanPayload
+
+        // SIP002 plugin links may include a slash before ?plugin=... .
+        // That slash belongs to the URI path, not to the numeric port.
+        val authority = decodedPart.substringAfterLast('@')
+            .substringBefore('?')
+            .substringBefore('#')
+            .substringBefore('/')
+            .trim()
+        if (authority.isBlank()) return null
+
+        val host: String
+        val port: Int
+        if (authority.startsWith("[")) {
             val close = authority.indexOf(']')
-            if (close < 0) return null
-            authority.substring(1, close) to authority.substring(close + 2).toIntOrNull()
-        } else authority.substringBeforeLast(':') to authority.substringAfterLast(':').toIntOrNull()
-        return hostPort.first to (hostPort.second ?: return null)
+            if (close <= 1 || authority.getOrNull(close + 1) != ':') return null
+            host = authority.substring(1, close)
+            port = authority.substring(close + 2).toIntOrNull() ?: return null
+        } else {
+            val separator = authority.lastIndexOf(':')
+            if (separator <= 0) return null
+            host = authority.substring(0, separator)
+            port = authority.substring(separator + 1).toIntOrNull() ?: return null
+        }
+
+        if (host.isBlank() || host.length > 253 || host.any { it.isWhitespace() || it.isISOControl() }) return null
+        if (port !in 1..65535) return null
+        return host to port
     }
 
     private fun padBase64(value: String): String {
