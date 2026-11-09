@@ -145,10 +145,32 @@ class ProxyRepository(private val context: Context) {
             var count = 0
             val reader = java.io.BufferedReader(java.io.InputStreamReader(decodedStream, Charsets.UTF_8))
             try {
-                while (true) {
-                    val raw = reader.readLine() ?: break
-                    val line = raw.trim().removePrefix("\uFEFF").substringBefore(" | ").trim()
-                    if (line.isNotEmpty()) {
+                reader.mark(65_536)
+                val prefix = buildString {
+                    repeat(20) {
+                        val line = reader.readLine() ?: return@repeat
+                        append(line).append('\n')
+                    }
+                }
+                reader.reset()
+                val structured = prefix.trimStart().startsWith("{") || prefix.trimStart().startsWith("[") ||
+                    prefix.contains("proxies:") || prefix.contains("outbounds:")
+                if (structured) {
+                    val content = reader.readText()
+                    if (content.length > MAX_SOURCE_BYTES) throw java.io.IOException("Превышен лимит конфигурации")
+                    ConfigParser.parseConfigs(content, source.name).forEach { item ->
+                        if (allProtocols || item.protocol.uppercase(Locale.ROOT) in filters) {
+                            val key = item.rawConfig.trim()
+                            if (key.isNotEmpty() && seen.add(key)) {
+                                count++
+                                onItem(item)
+                            }
+                        }
+                    }
+                } else {
+                    suspend fun processLine(raw: String) {
+                        val line = raw.trim().removePrefix("\uFEFF").substringBefore(" | ").trim()
+                        if (line.isEmpty()) return
                         val candidate = if (source.protocol != null && !line.contains("://")) "${source.protocol}://$line" else line
                         val item = ConfigParser.parseConfig(candidate, source.name)
                         if (item != null && (allProtocols || item.protocol.uppercase(Locale.ROOT) in filters)) {
@@ -158,6 +180,10 @@ class ProxyRepository(private val context: Context) {
                                 onItem(item)
                             }
                         }
+                    }
+                    while (true) {
+                        val raw = reader.readLine() ?: break
+                        processLine(raw)
                     }
                 }
             } finally {
