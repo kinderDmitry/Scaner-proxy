@@ -102,6 +102,23 @@ class ProxyConfigParsingTest {
     }
 
     @Test
+    fun parsesWireGuardAndAmneziaWgIniEndpoint() {
+        val profile = """
+            [Interface]
+            PrivateKey = hidden
+            Address = 10.0.0.2/32
+
+            [Peer]
+            PublicKey = hidden
+            Endpoint = [2001:4860:4860::8888]:51820
+        """.trimIndent()
+        val item = ConfigParser.parseConfigs(profile).single()
+        assertEquals("WireGuard", item.protocol)
+        assertEquals("2001:4860:4860::8888", item.host)
+        assertEquals(51820, item.port)
+    }
+
+    @Test
     fun rejectsMalformedAndNonProxyInput() {
         assertNull(ConfigParser.parseConfig("not a proxy"))
         assertNull(ConfigParser.parseConfig("socks5://host.example.net:99999"))
