@@ -344,4 +344,42 @@ class ProxyItemTest {
         assertEquals("vless://id@example.com:443", namedConfigForImport(vless))
     }
 
+
+    @Test
+    fun parsesVmessUrlSafeBase64WithoutPaddingAndKeepsOriginalLinkForHapp() {
+        val json = """{"v":"2","ps":"DE Frankfurt","add":"vmess.example.net","port":443,"id":"00000000-0000-0000-0000-000000000000","aid":0,"scy":"auto","net":"ws","type":"none","host":"cdn.example.net","path":"/vmess","tls":"tls","sni":"cdn.example.net"}"""
+        val encoded = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(json.toByteArray(Charsets.UTF_8))
+        val link = "vmess://$encoded#DE-Frankfurt"
+        val parsed = ConfigParser.parseConfig(link)
+        assertEquals("VMESS", parsed?.protocol)
+        assertEquals("vmess.example.net", parsed?.host)
+        assertEquals(443, parsed?.port)
+        assertEquals(link, parsed?.rawConfig)
+        assertEquals("vmess://$encoded#DE-Frankfurt", namedConfigForImport(parsed!!))
+    }
+
+    @Test
+    fun parsesShadowsocksSip002UrlSafeCredentialsAndPluginPath() {
+        val credentials = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("chacha20-ietf-poly1305:secret".toByteArray(Charsets.UTF_8))
+        val link = "ss://$credentials@ss.example.net:8388/?plugin=v2ray-plugin%3Btls%3Bhost%3Dcdn.example.net#DE-Berlin"
+        val parsed = ConfigParser.parseConfig(link)
+        assertEquals("Shadowsocks", parsed?.protocol)
+        assertEquals("ss.example.net", parsed?.host)
+        assertEquals(8388, parsed?.port)
+        assertEquals(link, parsed?.rawConfig)
+    }
+
+    @Test
+    fun parsesLegacyShadowsocksBase64AuthorityWithIpv6() {
+        val authority = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("aes-128-gcm:secret@[2001:db8::10]:8388".toByteArray(Charsets.UTF_8))
+        val link = "ss://$authority#DE-Frankfurt"
+        val parsed = ConfigParser.parseConfig(link)
+        assertEquals("Shadowsocks", parsed?.protocol)
+        assertEquals("2001:db8::10", parsed?.host)
+        assertEquals(8388, parsed?.port)
+    }
+
 }
