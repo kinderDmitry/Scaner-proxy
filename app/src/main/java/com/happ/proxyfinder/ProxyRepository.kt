@@ -293,8 +293,10 @@ class ProxyRepository(private val context: Context) {
         if (compact.length < 16 || !compact.matches(Regex("[A-Za-z0-9+/=_-]+"))) return text
         return runCatching {
             val padded = compact.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }
-            String(Base64.decode(padded, Base64.DEFAULT), Charsets.UTF_8)
-                .takeIf { schemePattern.containsMatchIn(it) } ?: text
+            String(Base64.decode(padded, Base64.DEFAULT), Charsets.UTF_8).takeIf { decoded ->
+                schemePattern.containsMatchIn(decoded) || decoded.trimStart().startsWith("{") ||
+                    decoded.trimStart().startsWith("[") || Regex("(?m)^\\s*proxies:").containsMatchIn(decoded)
+            } ?: text
         }.getOrDefault(text)
     }
 
