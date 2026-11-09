@@ -693,7 +693,7 @@ class ProxyRepository(private val context: Context) {
             }
 
             val encodedIp = java.net.URLEncoder.encode(ip, "UTF-8")
-            request("https://ipwho.is/$encodedIp?fields=success,country,country_code,city") { json ->
+            return request("https://ipwho.is/$encodedIp?fields=success,country,country_code,city") { json ->
                 if (!json.optBoolean("success")) return@request null
                 val country = json.optString("country").takeUnless { it.isBlank() || it == "null" }.orEmpty()
                 if (country.isBlank()) return@request null
@@ -1123,7 +1123,7 @@ internal object ConfigParser {
         return text.lineSequence().mapNotNull { raw ->
             val line = raw.trim().removePrefix("\uFEFF").substringBefore(" | ").trim()
             if (line.isBlank()) null else parseConfig(line, sourceName)
-        }.distinctBy { it.rawConfig }
+        }.distinctBy { it.rawConfig }.toList()
     }
 
     /**
