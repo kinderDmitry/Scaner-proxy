@@ -91,6 +91,11 @@ private val TextPrimary = Color(0xFFF2F6FC)
 private val TextMuted = Color(0xFFA6B5C8)
 private val Line = Color(0xFF2B3B50)
 
+private val SupportedProxyProtocols = listOf(
+    "VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2",
+    "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS"
+)
+
 private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape(18.dp)): Modifier =
     this.clip(shape)
         .background(Brush.linearGradient(listOf(SurfaceRaised, Surface, Bg)))
@@ -436,7 +441,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     fun scan() {
         if (loading) return
-        val scanAllProtocols = scanFiltersSelected.isEmpty() || scanFiltersSelected.size == 10
+        val scanAllProtocols = scanFiltersSelected.isEmpty() || scanFiltersSelected.size == SupportedProxyProtocols.size
         if (scanScope == "Весь мир") selectedProtocols = if (scanAllProtocols) emptySet() else scanFiltersSelected
         loading = true
         errorMessage = ""
@@ -589,7 +594,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         }
     }
 
-    val protocols = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2", "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+    val protocols = SupportedProxyProtocols
     val countries = remember(allItems) { listOf("Все страны") + allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
     val visible = remember(allItems, query, selectedProtocols, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
         val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}"
@@ -724,7 +729,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
                     }
                     if (scanScope == "Весь мир") {
-                        val scanFilters = listOf("VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2", "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS")
+                        val scanFilters = SupportedProxyProtocols
                         Text("Протоколы для поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == scanFilters.size) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 11.sp)
