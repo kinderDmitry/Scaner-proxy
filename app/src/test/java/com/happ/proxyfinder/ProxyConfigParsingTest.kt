@@ -3,10 +3,44 @@ package com.happ.proxyfinder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.fail
+import java.io.ByteArrayInputStream
+import java.io.IOException
 import org.junit.Test
 import java.util.Base64
 
 class ProxyConfigParsingTest {
+    @Test
+    fun rejectsMalformedHostsForGenericAndStructuredProtocols() {
+        assertNull(ConfigParser.parseConfig("trojan://secret@bad host:443"))
+        assertNull(ConfigParser.parseConfig("vless://00000000-0000-0000-0000-000000000000@999.1.1.1:443"))
+        assertNull(ConfigParser.parseConfig("""{"type":"socks","server":"bad_host.example","server_port":1080}"""))
+    }
+
+    @Test
+    fun acceptsValidIpv6AndInternationalizedEndpointHosts() {
+        val ipv6 = ConfigParser.parseConfig("trojan://secret@[2001:4860:4860::8888]:443")
+        val idn = ConfigParser.parseConfig("trojan://secret@xn--e1afmkfd.xn--p1ai:443")
+        assertNotNull(ipv6)
+        assertNotNull(idn)
+        assertEquals("2001:4860:4860::8888", ipv6!!.host)
+        assertEquals("xn--e1afmkfd.xn--p1ai", idn!!.host)
+    }
+
+    @Test
+    fun streamingSourceReaderEnforcesMaximumRawBytes() {
+        val exactLimit = BoundedInputStream(ByteArrayInputStream(byteArrayOf(1, 2, 3)), 3)
+        assertEquals(listOf<Byte>(1, 2, 3), exactLimit.readBytes().toList())
+
+        val oversized = BoundedInputStream(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)), 3)
+        try {
+            oversized.readBytes()
+            fail("Expected the byte limit to reject an oversized source")
+        } catch (_: IOException) {
+            // Expected: untrusted feeds cannot exceed the configured raw-byte ceiling.
+        }
+    }
+
     @Test
     fun parsesHappSocksUriWithEmptyCredentialsAndEncodedLabel() {
         val item = ConfigParser.parseConfig(
