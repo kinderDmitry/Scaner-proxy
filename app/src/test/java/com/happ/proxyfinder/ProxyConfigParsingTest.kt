@@ -71,6 +71,37 @@ class ProxyConfigParsingTest {
     }
 
     @Test
+    fun parsesMultiNodeSingBoxJsonProfile() {
+        val profile = """{"outbounds":[{"type":"socks","tag":"local","server":"one.example.net","server_port":1080},{"type":"vless","tag":"🇩🇪 Germany","server":"two.example.net","server_port":443}]}"""
+        val items = ConfigParser.parseConfigs(profile)
+        assertEquals(2, items.size)
+        assertEquals("SOCKS5", items[0].protocol)
+        assertEquals("VLESS", items[1].protocol)
+        assertEquals("two.example.net", items[1].host)
+    }
+
+    @Test
+    fun parsesClashYamlProxyList() {
+        val profile = """
+            mixed-port: 7890
+            proxies:
+              - name: Germany node
+                type: socks5
+                server: de.example.net
+                port: 1080
+              - name: US node
+                type: http
+                server: us.example.net
+                port: 8080
+        """.trimIndent()
+        val items = ConfigParser.parseConfigs(profile)
+        assertEquals(2, items.size)
+        assertEquals("SOCKS5", items[0].protocol)
+        assertEquals("HTTP", items[1].protocol)
+        assertEquals("us.example.net", items[1].host)
+    }
+
+    @Test
     fun rejectsMalformedAndNonProxyInput() {
         assertNull(ConfigParser.parseConfig("not a proxy"))
         assertNull(ConfigParser.parseConfig("socks5://host.example.net:99999"))
