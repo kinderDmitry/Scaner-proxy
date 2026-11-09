@@ -320,6 +320,30 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         totalStoredCount = stats.first
         totalVerifiedCount = stats.second
         sourceStatus = if (stats.first == 0) "Готов к сканированию" else "Загружено ${restored.size} последних узлов · всего в базе ${stats.first}"
+
+        // GeoIP was previously implemented but never called: enrich restored records too.
+        if (restored.any { it.country.isBlank() || it.city.isBlank() }) {
+            geoLoading = true
+            sourceStatus = "Определяем страну и город сохранённых узлов"
+            try {
+                val resolved = repo.resolveCountries(restored) { geoItem ->
+                    withContext(Dispatchers.Main) {
+                        allItems = mergeResolvedGeoResults(allItems, listOf(geoItem))
+                        sourceProgress = "Геолокация: ${allItems.count { it.country.isNotBlank() }} узлов определено"
+                    }
+                    withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(geoItem)) }
+                }
+                allItems = resolved
+                withContext(Dispatchers.IO) { repo.saveSnapshot(resolved) }
+                sourceStatus = "Геолокация сохранённых узлов обновлена"
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                sourceStatus = "Геолокация частично недоступна"
+                sourceProgress = error.message?.take(120) ?: "Провайдеры GeoIP не ответили"
+            } finally {
+                geoLoading = false
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -516,12 +540,30 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 channel.close()
                 workers.joinAll()
                 val latest = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
+                // Resolve IP geolocation after discovery; update cards and persist each result immediately.
+                geoLoading = true
+                sourceStatus = "Поиск завершён · определяем страну и город узлов"
+                try {
+                    val resolved = repo.resolveCountries(latest) { geoItem ->
+                        withContext(Dispatchers.Main) {
+                            allItems = mergeResolvedGeoResults(allItems, listOf(geoItem))
+                            sourceProgress = "Определено местоположение: ${allItems.count { it.country.isNotBlank() }}"
+                        }
+                        withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(geoItem)) }
+                    }
+                    allItems = resolved
+                    withContext(Dispatchers.IO) { repo.saveSnapshot(resolved) }
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    sourceProgress = "GeoIP временно недоступен: ${error.message?.take(90) ?: "нет ответа"}"
+                } finally {
+                    geoLoading = false
+                }
                 val stats = withContext(Dispatchers.IO) { repo.snapshotStats() }
-                allItems = latest
                 totalStoredCount = stats.first
                 totalVerifiedCount = stats.second
-                sourceStatus = "Поиск и автоматическая проверка завершены"
-                sourceProgress = "В этом запуске найдено $discoveredCount · проверено $checkedCount · рабочих $verifiedCount · всего в SQLite $totalStoredCount"
+                sourceStatus = "Поиск, проверка и геолокация завершены"
+                sourceProgress = "Найдено $discoveredCount · проверено $checkedCount · рабочих $verifiedCount · всего в базе $totalStoredCount"
                 if (fetched.sourceErrors.isNotEmpty()) {
                     sourceProgress += " · ошибок источников: ${fetched.sourceErrors.size}"
                 }
