@@ -20,6 +20,36 @@ import java.net.URL
 import java.net.URI
 import android.util.Base64
 import java.util.Locale
+import java.io.FilterInputStream
+import java.io.InputStream
+
+/** Enforces a hard byte ceiling even when a remote feed uses chunked transfer encoding. */
+internal class BoundedInputStream(input: InputStream, private val maxBytes: Long) : FilterInputStream(input) {
+    private var bytesRead = 0L
+
+    init {
+        require(maxBytes >= 0L)
+    }
+
+    override fun read(): Int {
+        if (bytesRead >= maxBytes) {
+            if (super.read() == -1) return -1
+            throw java.io.IOException("Превышен лимит источника")
+        }
+        val value = super.read()
+        if (value >= 0) bytesRead++
+        return value
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        val remaining = maxBytes - bytesRead
+        if (remaining <= 0L) return if (read() == -1) -1 else -1
+        val count = super.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
+        if (count > 0) bytesRead += count
+        return count
+    }
+}
 
 /** Fetches public configuration feeds. Feed contents are untrusted input and are never executed. */
 class ProxyRepository(private val context: Context) {
@@ -82,7 +112,7 @@ class ProxyRepository(private val context: Context) {
             "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
             "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
             "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
-            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed" || source.protocol == null || source.protocol == null
+            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed" || source.protocol == null
             else -> false
         }
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
@@ -128,7 +158,8 @@ class ProxyRepository(private val context: Context) {
             val status = connection.responseCode
             if (status !in 200..299) throw java.io.IOException("HTTP $status")
 
-            val buffered = java.io.BufferedInputStream(connection.inputStream)
+            val boundedInput = BoundedInputStream(connection.inputStream, MAX_SOURCE_BYTES.toLong())
+            val buffered = java.io.BufferedInputStream(boundedInput)
             buffered.mark(512)
             val sampleBytes = ByteArray(256)
             val sampleLength = buffered.read(sampleBytes)
@@ -1042,7 +1073,7 @@ internal object ConfigParser {
         }.getOrNull() ?: return null
         val host = endpoint.first.trim().removePrefix("[").removeSuffix("]")
         val port = endpoint.second ?: -1
-        if (host.isBlank() || port !in 1..65535 || host.length > 253) return null
+        if (host.isBlank() || port !in 1..65535 || !isValidEndpointHost(host)) return null
         val title = runCatching { line.substringAfter('#', "").substringBefore('?').let { java.net.URLDecoder.decode(it, "UTF-8") } }.getOrDefault("")
         val countryInfo = parseCountryFromTitle(title)
         return ProxyItem(
@@ -1050,6 +1081,34 @@ internal object ConfigParser {
             source = "Сеть · " + sourceName, rawConfig = line, title = title.take(48),
             checkStatus = "Не проверен", country = countryInfo.first, countryCode = countryInfo.second
         )
+    }
+
+
+    private fun isValidEndpointHost(host: String): Boolean {
+        val value = host.trim()
+        if (value.isEmpty() || value.length > 253 ||
+            value.any { it.isWhitespace() || it.isISOControl() || it in "/?#@\\\\" }) return false
+
+        if (value.matches(Regex("[0-9.]+"))) {
+            val octets = value.split('.')
+            return octets.size == 4 && octets.all { part ->
+                part.isNotEmpty() && part.length <= 3 && part.toIntOrNull()?.let { it in 0..255 } == true
+            }
+        }
+
+        if (value.contains(':')) {
+            if (!value.matches(Regex("[0-9A-Fa-f:.]+"))) return false
+            return runCatching { java.net.InetAddress.getByName(value) is java.net.Inet6Address }.getOrDefault(false)
+        }
+
+        return runCatching {
+            val ascii = java.net.IDN.toASCII(value.removeSuffix("."), java.net.IDN.USE_STD3_ASCII_RULES)
+            ascii.isNotEmpty() && ascii.length <= 253 && ascii.split('.').all { label ->
+                label.isNotEmpty() && label.length <= 63 &&
+                    label.first().isLetterOrDigit() && label.last().isLetterOrDigit() &&
+                    label.all { it.isLetterOrDigit() || it == '-' }
+            }
+        }.getOrDefault(false)
     }
 
     /** Parses URI subscriptions, sing-box JSON profiles and Clash YAML proxy lists. */
@@ -1063,7 +1122,7 @@ internal object ConfigParser {
             if (endpoint != null) {
                 val host = endpoint.groupValues[1].removePrefix("[").removeSuffix("]")
                 val port = endpoint.groupValues[2].toIntOrNull() ?: -1
-                if (host.isNotBlank() && port in 1..65535) {
+                if (host.isNotBlank() && port in 1..65535 && isValidEndpointHost(host)) {
                     val title = Regex("(?m)^#\\s*(.+)$").find(text)?.groupValues?.get(1).orEmpty()
                     val countryInfo = parseCountryFromTitle(title)
                     return listOf(ProxyItem(
@@ -1149,7 +1208,7 @@ internal object ConfigParser {
         val endpoint = json.optString("server").ifBlank { json.optString("address").ifBlank { json.optString("add") } }
             .trim().removePrefix("[").removeSuffix("]")
         val endpointPort = json.optInt("server_port", json.optInt("port", -1))
-        if (endpoint.isBlank() || endpointPort !in 1..65535) return null
+        if (endpoint.isBlank() || endpointPort !in 1..65535 || !isValidEndpointHost(endpoint)) return null
         val title = json.optString("tag").ifBlank { json.optString("name") }
         val countryInfo = parseCountryFromTitle(title)
         return ProxyItem(
