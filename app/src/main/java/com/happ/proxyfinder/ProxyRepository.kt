@@ -920,7 +920,7 @@ internal object ConfigParser {
                 "vmess" -> {
                     // VMess uses URL-safe Base64 in the wild; decode it with the same
                     // RFC 4648 normalizer used by the other proxy URI parsers.
-                    val payload = line.substringAfter("vmess://").substringBefore('#').substringBefore('?').trim()
+                    val payload = line.substringAfter("://").substringBefore('#').substringBefore('?').trim()
                     val decoded = decodeBase64Utf8(payload) ?: return null
                     val json = JSONObject(decoded)
                     val address = json.optString("add").trim()
@@ -931,7 +931,7 @@ internal object ConfigParser {
                     }
                     address to vmessPort
                 }
-                "ss" -> parseShadowsocksEndpoint(line.substringAfter("ss://"))
+                "ss" -> parseShadowsocksEndpoint(line.substringAfter("://"))
                 "socks", "socks5", "socks4" -> parseSocksEndpoint(line.substringAfter("://"))
                 else -> {
                     val uri = URI(line)
