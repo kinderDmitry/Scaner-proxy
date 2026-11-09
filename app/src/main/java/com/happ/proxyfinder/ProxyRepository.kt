@@ -187,6 +187,7 @@ class ProxyRepository(private val context: Context) {
             "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
             "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
             "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
+            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed"
             else -> false
         }
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
