@@ -408,4 +408,17 @@ class ProxyItemTest {
         assertEquals("socks://user:pass@host:1080", normalizeProxySchemeForHapp("SOCKS5://user:pass@host:1080"))
     }
 
+    @Test
+    fun ipv4RangeParserAcceptsMultipleCidrsAndDeduplicatesOverlapsWithinAggregateLimit() {
+        val addresses = Ipv4RangeParser.parseMany("192.168.1.0/30\n192.168.1.2/31\n10.0.0.7")
+        assertEquals(listOf("192.168.1.1", "192.168.1.2", "10.0.0.7"), addresses)
+    }
+
+    @Test
+    fun ipv4RangeParserRejectsTooManyRangesAndAggregateHosts() {
+        assertEquals(null, Ipv4RangeParser.parseMany("192.168.1.0/24\n192.168.2.0/24\n192.168.3.0/24\n192.168.4.0/24\n192.168.5.0/24"))
+        assertEquals(null, Ipv4RangeParser.parseMany("10.0.0.0/24\n10.0.1.0/24\n10.0.2.0/24\n10.0.3.0/24\n10.0.4.0/24"))
+        assertEquals(null, Ipv4RangeParser.parseMany("10.0.0.0/24\nnot-an-ip"))
+    }
+
 }
