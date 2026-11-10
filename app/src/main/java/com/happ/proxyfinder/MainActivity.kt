@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity() {
                     contentResolver.openOutputStream(uri)?.use { repository.exportVerifiedJson(it) }
                         ?: error("Не удалось открыть файл")
                 }
-                Toast.makeText(this@MainActivity, "JSON сохранён: $count рабочих конфигураций", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Hiddify JSON сохранён: $count проверенных туннелей", Toast.LENGTH_LONG).show()
             } catch (error: Exception) {
                 Toast.makeText(this@MainActivity, "Ошибка сохранения: ${error.message}", Toast.LENGTH_LONG).show()
             }
@@ -136,12 +136,16 @@ class MainActivity : ComponentActivity() {
                         onShare = { item ->
                             val config = namedConfigForImport(item)
                             val isSocks4 = item.protocol.equals("SOCKS4", ignoreCase = true)
-                            val choices = if (isSocks4) arrayOf("Другие приложения / поделиться", "Копировать конфигурацию")
-                                else arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
+                            val verified = item.isExportReady
+                            val choices = when {
+                                !verified -> arrayOf("Копировать конфигурацию")
+                                isSocks4 -> arrayOf("Другие приложения / поделиться", "Копировать конфигурацию")
+                                else -> arrayOf("Добавить в HAPP", "Добавить в Hiddify", "Другие приложения / поделиться", "Копировать конфигурацию")
+                            }
                             AlertDialog.Builder(this)
-                                .setTitle(if (isSocks4) "SOCKS4 не поддерживается HAPP" else "Куда добавить конфигурацию?")
+                                .setTitle(when { !verified -> "Туннель не подтверждён"; isSocks4 -> "SOCKS4 не поддерживается HAPP"; else -> "Куда добавить конфигурацию?" })
                                 .setItems(choices) { _, selected ->
-                                    val which = if (isSocks4) selected + 2 else selected
+                                    val which = when { !verified -> 3; isSocks4 -> selected + 2; else -> selected }
                                     fun shareChooser() {
                                         val send = Intent(Intent.ACTION_SEND).apply {
                                             type = "text/plain"
@@ -183,7 +187,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onBulkShare = { items ->
                             val unique = items.distinctBy { it.rawConfig.trim() }
-                                .filter { it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", true) }
+                                .filter { it.isExportReady && it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", true) }
                             if (unique.isNotEmpty()) {
                                 val payload = buildHappSubscription(unique)
                                 val send = Intent(Intent.ACTION_SEND).apply {
@@ -192,10 +196,10 @@ class MainActivity : ComponentActivity() {
                                     putExtra(Intent.EXTRA_SUBJECT, "HAPP Proxy Finder · ${unique.size} конфигураций")
                                 }
                                 startActivity(Intent.createChooser(send, "Передать ${unique.size} прокси"))
-                            } else Toast.makeText(this, "Нет поддерживаемых для HAPP конфигураций: SOCKS4 исключён.", Toast.LENGTH_LONG).show()
+                            } else Toast.makeText(this, "Нет проверенных туннелей для передачи в HAPP. Непроверенные узлы исключены.", Toast.LENGTH_LONG).show()
                         },
                         onCopyAllJson = {
-                            jsonFileLauncher.launch("proxy-finder-working-${System.currentTimeMillis()}.json")
+                            jsonFileLauncher.launch("hiddify-singbox-verified-${System.currentTimeMillis()}.json")
                         }
                     )
                 }
@@ -211,7 +215,7 @@ class MainActivity : ComponentActivity() {
  */
 internal fun buildHappSubscription(items: List<ProxyItem>): String {
     val ordered = items.asSequence()
-        .filter { it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", ignoreCase = true) }
+        .filter { it.isExportReady && it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", ignoreCase = true) }
         .distinctBy { it.rawConfig.trim() }
         .sortedWith(
             compareBy<ProxyItem> {
@@ -523,14 +527,14 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             return
         }
         sourceStatus = "Подключаемся к открытым источникам"
-        sourceProgress = "Потоковый поиск · проверка начинается сразу после обнаружения"
+        sourceProgress = "Потоковый поиск · HTTPS-туннель проверяется сразу при обнаружении · 12 параллельных проверок"
         scope.launch {
             val savedFavorites = withContext(Dispatchers.IO) { repo.loadFavorites() }
             val channel = Channel<ProxyItem>(capacity = 128)
             var discoveredCount = 0
             var checkedCount = 0
             var verifiedCount = 0
-            val workers = List(8) {
+            val workers = List(12) {
                 scope.launch {
                     for (candidate in channel) {
                         try {

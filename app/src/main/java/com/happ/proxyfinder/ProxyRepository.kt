@@ -503,6 +503,14 @@ class ProxyRepository(private val context: Context) {
     suspend fun check(item: ProxyItem): ProxyItem = withContext(Dispatchers.IO) {
         val checkedAt = System.currentTimeMillis()
         if (item.port !in 1..65535) return@withContext item.copy(checkStatus = "Неверный порт", latencyMs = null, checkedAt = checkedAt)
+        if (!item.supportsNativeTunnelCheck) return@withContext item.copy(
+            checkStatus = "Туннель не проверен: протокол ${item.protocol} пока не поддерживается нативным тестером",
+            latencyMs = null, checkedAt = checkedAt
+        )
+        if (item.protocol.equals("VLESS", true) && VlessTcpTls.parse(item.rawConfig) == null) return@withContext item.copy(
+            checkStatus = "Туннель не проверен: для VLESS требуется поддерживаемый профиль TCP + TLS",
+            latencyMs = null, checkedAt = checkedAt
+        )
         try {
             val targets = listOf("www.gstatic.com" to "/generate_204", "cp.cloudflare.com" to "/generate_204")
             var lastStatus: Int? = null
@@ -914,47 +922,24 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     }
 
     fun stats(): Pair<Int, Int> = readableDatabase.rawQuery(
-        "SELECT COUNT(*), SUM(CASE WHEN (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') THEN 1 ELSE 0 END) FROM proxy_results",
+        "SELECT COUNT(*), SUM(CASE WHEN (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') AND latency IS NOT NULL AND checked_at IS NOT NULL AND raw_config <> '' THEN 1 ELSE 0 END) FROM proxy_results",
         null
     ).use { cursor ->
         if (cursor.moveToFirst()) cursor.getInt(0) to cursor.getInt(1) else 0 to 0
     }
 
     /** Streams the complete verified-only export from a SQLite cursor. */
+    /** Writes a standard Hiddify/sing-box profile. Unverified and unsupported rows are excluded. */
     fun writeVerifiedJson(output: java.io.OutputStream): Int {
-        val writer = java.io.OutputStreamWriter(output, Charsets.UTF_8)
-        var count = 0
-        writer.write("{\"format\":\"happ-proxy-finder\",\"version\":1,\"exportedAt\":${System.currentTimeMillis()},\"proxies\":[")
-        val sql = "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') ORDER BY latency ASC, rowid DESC"
-        readableDatabase.rawQuery(sql, null).use { cursor ->
-            while (cursor.moveToNext()) {
-                fun string(name: String) = cursor.getString(cursor.getColumnIndexOrThrow(name)) ?: ""
-                fun nullableInt(name: String): Int? {
-                    val index = cursor.getColumnIndexOrThrow(name)
-                    return if (cursor.isNull(index)) null else cursor.getInt(index)
-                }
-                val item = ProxyItem(
-                    id = string("id"), host = string("host"), port = cursor.getInt(cursor.getColumnIndexOrThrow("port")),
-                    protocol = string("protocol"), source = string("source"), rawConfig = string("raw_config"),
-                    checkStatus = string("status"), latencyMs = nullableInt("latency"),
-                    favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
-                    checkedAt = if (cursor.isNull(cursor.getColumnIndexOrThrow("checked_at"))) null else cursor.getLong(cursor.getColumnIndexOrThrow("checked_at")),
-                    title = string("title"), country = string("country"), countryCode = string("country_code"), city = string("city")
-                )
-                if (count > 0) writer.write(",")
-                val row = JSONObject().apply {
-                    put("id", item.id); put("protocol", item.protocol); put("host", item.host); put("port", item.port)
-                    put("name", item.title); put("country", item.country); put("city", item.city)
-                    put("source", item.source); put("status", item.checkStatus); put("verified", item.isTunnelVerified)
-                    put("latencyMs", item.latencyMs ?: JSONObject.NULL); put("config", namedConfigForImport(item))
-                }
-                writer.write(row.toString())
-                count++
-            }
-        }
-        writer.write("]}")
-        writer.flush()
-        return count
+        val exportable = readVerified().mapNotNull { item -> singBoxOutboundForVerified(item)?.let { item to it } }
+        if (exportable.isEmpty()) throw IllegalStateException("Нет проверенных туннелей, поддерживаемых Hiddify/sing-box")
+        val root = JSONObject()
+            .put("$"+"schema", "https://sing-box.sagernet.org/schema.json")
+            .put("log", JSONObject().put("level", "warn"))
+            .put("outbounds", JSONArray(exportable.map { it.second }))
+            .put("route", JSONObject().put("final", exportable.first().second.getString("tag")))
+        output.writer(Charsets.UTF_8).use { it.write(root.toString(2)) }
+        return exportable.size
     }
 
     fun upsert(items: List<ProxyItem>) {
@@ -1006,7 +991,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
     )
 
     fun readVerified(): List<ProxyItem> = readQuery(
-        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') ORDER BY latency ASC, rowid DESC"
+        "SELECT id,host,port,protocol,source,raw_config,status,latency,favorite,checked_at,title,country,country_code,city FROM proxy_results WHERE (status LIKE 'Проверен через %HTTP 204%' OR status LIKE 'Проверен через generate_204%') AND latency IS NOT NULL AND checked_at IS NOT NULL AND raw_config <> '' ORDER BY latency ASC, rowid DESC"
     )
 }
 
@@ -1571,7 +1556,7 @@ data class ProxyItem(
     val needsNativeTunnelCheck: Boolean get() = supportsNativeTunnelCheck && !isTunnelVerified &&
         (checkedAt == null || System.currentTimeMillis() - checkedAt >= 10 * 60 * 1000L)
     /** Only a successful end-to-end HTTP 204 proxy tunnel may be exported to HAPP. */
-    val isExportReady: Boolean get() = isTunnelVerified && rawConfig.isNotBlank()
+    val isExportReady: Boolean get() = isTunnelVerified && latencyMs != null && checkedAt != null && rawConfig.isNotBlank()
 
     /** Quality is meaningful only when the proxy actually completed the generate_204 request. */
     val qualityScore: Int get() {
@@ -1586,6 +1571,51 @@ data class ProxyItem(
     }
 }
 
+
+/** Builds a sing-box outbound only when the complete proxy tunnel was verified. */
+internal fun singBoxOutboundForVerified(item: ProxyItem): JSONObject? {
+    if (!item.isExportReady || item.latencyMs == null || item.checkedAt == null) return null
+    val raw = item.rawConfig.trim()
+    val outbound = JSONObject().put("tag", "proxy-${item.id}").put("server", item.host).put("server_port", item.port)
+    when (item.protocol.uppercase(Locale.ROOT)) {
+        "SOCKS4", "SOCKS5" -> {
+            outbound.put("type", "socks").put("version", if (item.protocol.equals("SOCKS4", true)) "4" else "5")
+            parseProxyCredentials(raw)?.let { (username, password) ->
+                outbound.put("username", username)
+                if (item.protocol.equals("SOCKS5", true)) outbound.put("password", password)
+            }
+        }
+        "HTTP", "HTTPS" -> {
+            outbound.put("type", "http")
+            parseProxyCredentials(raw)?.let { (username, password) ->
+                outbound.put("username", username).put("password", password)
+            }
+            if (item.protocol.equals("HTTPS", true)) outbound.put("tls", JSONObject().put("enabled", true).put("server_name", item.host))
+        }
+        "VLESS" -> {
+            val config = VlessTcpTls.parse(raw) ?: return null
+            if (!config.host.equals(item.host, true) || config.port != item.port) return null
+            outbound.put("type", "vless").put("uuid", config.id.toString()).put("network", "tcp")
+                .put("tls", JSONObject().put("enabled", true).put("server_name", config.serverName))
+        }
+        else -> return null
+    }
+    if (outbound.optString("type").isBlank()) return null
+    return outbound
+}
+
+/** Standard sing-box profile for Hiddify; only verified and representable nodes are included. */
+internal fun buildHiddifySingBoxConfig(items: Iterable<ProxyItem>): String {
+    val outbounds = items.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }
+        .mapNotNull(::singBoxOutboundForVerified).toList()
+    require(outbounds.isNotEmpty()) { "Нет проверенных туннелей, поддерживаемых форматом Hiddify/sing-box" }
+    return JSONObject()
+        .put("$"+"schema", "https://sing-box.sagernet.org/schema.json")
+        .put("log", JSONObject().put("level", "warn"))
+        .put("outbounds", JSONArray(outbounds))
+        .put("route", JSONObject().put("final", outbounds.first().getString("tag")))
+        .toString(2)
+}
 
 /** Selects only working, unique configs for verified-only export. */
 internal fun verifiedExportItems(items: Iterable<ProxyItem>): List<ProxyItem> =

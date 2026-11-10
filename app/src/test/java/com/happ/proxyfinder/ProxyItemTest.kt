@@ -46,9 +46,46 @@ class ProxyItemTest {
                 "#check-url-via-proxy: https://cp.cloudflare.com/generate_204\n"
         ))
         assertTrue(subscription.indexOf("vless://fast") < subscription.indexOf("vless://slow"))
-        assertTrue(subscription.indexOf("vless://slow") < subscription.indexOf("vless://unchecked"))
-        assertTrue(subscription.indexOf("vless://unchecked") < subscription.indexOf("vless://failed"))
+        assertFalse(subscription.contains("vless://unchecked"))
+        assertFalse(subscription.contains("vless://failed"))
         assertFalse(subscription.contains("socks4://"))
+    }
+
+    @Test
+    fun hiddifySingBoxExportContainsOnlyVerifiedTypedOutbounds() {
+        val socks = item("Проверен через HTTPS-туннель · HTTP 204", 42).copy(
+            id = "socks-node", rawConfig = "socks5://alice:secret@proxy.example:1080"
+        )
+        val vless = item("Проверен через HTTPS-туннель · HTTP 204", 95).copy(
+            id = "vless-node", protocol = "VLESS",
+            rawConfig = "vless://00000000-0000-0000-0000-000000000000@vless.example:443?security=tls&type=tcp&sni=cdn.example"
+        )
+        val unchecked = item("Не проверен", null).copy(id = "unchecked", rawConfig = "socks5://unchecked")
+        val config = JSONObject(buildHiddifySingBoxConfig(listOf(socks, unchecked, vless)))
+        val outbounds = config.getJSONArray("outbounds")
+        assertEquals(2, outbounds.length())
+        assertEquals("socks", outbounds.getJSONObject(0).getString("type"))
+        assertEquals("alice", outbounds.getJSONObject(0).getString("username"))
+        assertEquals("secret", outbounds.getJSONObject(0).getString("password"))
+        assertEquals("vless", outbounds.getJSONObject(1).getString("type"))
+        assertEquals("00000000-0000-0000-0000-000000000000", outbounds.getJSONObject(1).getString("uuid"))
+        assertEquals("proxy-socks-node", config.getJSONObject("route").getString("final"))
+    }
+
+    @Test
+    fun hiddifyExportRejectsUnsupportedOrUnverifiedNodes() {
+        val unsupported = item("Проверен через HTTPS-туннель · HTTP 204", 50).copy(
+            protocol = "Shadowsocks", rawConfig = "ss://invalid"
+        )
+        val unverified = item("TCP доступен · туннель не подтверждён", null)
+        assertEquals(null, singBoxOutboundForVerified(unsupported))
+        assertEquals(null, singBoxOutboundForVerified(unverified))
+        try {
+            buildHiddifySingBoxConfig(listOf(unsupported, unverified))
+            throw AssertionError("Expected empty verified set to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("Нет проверенных туннелей"))
+        }
     }
 
     @Test
