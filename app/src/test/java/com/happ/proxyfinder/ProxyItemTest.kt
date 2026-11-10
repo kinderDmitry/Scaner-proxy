@@ -213,6 +213,33 @@ class ProxyItemTest {
     }
 
     @Test
+    fun ipv4RangeParserAcceptsInclusiveStartEndSyntax() {
+        assertEquals(
+            listOf("192.168.1.10", "192.168.1.11", "192.168.1.12"),
+            Ipv4RangeParser.parse("192.168.1.10-192.168.1.12")
+        )
+        assertEquals(listOf("10.0.0.1"), Ipv4RangeParser.parse("10.0.0.1-10.0.0.1"))
+    }
+
+    @Test
+    fun ipv4RangeParserRejectsReversedOversizedAndNonRoutableRanges() {
+        assertEquals(null, Ipv4RangeParser.parse("192.168.1.20-192.168.1.10"))
+        assertEquals(null, Ipv4RangeParser.parse("192.168.0.1-192.168.1.1"))
+        assertEquals(null, Ipv4RangeParser.parse("127.0.0.1-127.0.0.2"))
+        assertEquals(null, Ipv4RangeParser.parse("224.0.0.1-224.0.0.2"))
+        assertEquals(null, Ipv4RangeParser.parse("192.168.1.1-999.1.1.1"))
+    }
+
+    @Test
+    fun ipv4RangeParserMergesOverlappingRangesAndEnforcesAggregateLimit() {
+        assertEquals(
+            listOf("192.168.1.10", "192.168.1.11", "192.168.1.12", "192.168.1.13"),
+            Ipv4RangeParser.parseMany("192.168.1.10-192.168.1.12\n192.168.1.12-192.168.1.13")
+        )
+        assertEquals(null, Ipv4RangeParser.parseMany("192.168.1.1-192.168.2.1"))
+    }
+
+    @Test
     fun parserRejectsCommentsMalformedEndpointsAndUnsupportedSchemes() {
         assertEquals(null, ConfigParser.parseConfig(""))
         assertEquals(null, ConfigParser.parseConfig("# subscription comment"))

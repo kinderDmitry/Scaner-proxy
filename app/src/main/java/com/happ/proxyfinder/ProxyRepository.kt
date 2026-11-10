@@ -343,7 +343,7 @@ class ProxyRepository(private val context: Context) {
         onProgress: suspend (String) -> Unit
     ): EndpointScanResult = withContext(Dispatchers.IO) {
         val addresses = Ipv4RangeParser.parseMany(rangeInput)
-            ?: return@withContext EndpointScanResult(emptyList(), "Укажи до 4 корректных IPv4/CIDR диапазонов. Каждый диапазон не шире /24, суммарно не более 1024 адресов.")
+            ?: return@withContext EndpointScanResult(emptyList(), "Укажи до 4 IPv4/CIDR или диапазонов начало-конец. Каждый диапазон — максимум 256 IP, суммарно не более 1024.")
         val ports = portsInput.split(',', ' ', ';', '\n', '\t')
             .mapNotNull { it.trim().toIntOrNull() }
             .filter { it in 1..65535 }.distinct().take(8)
@@ -1441,25 +1441,58 @@ internal object Ipv4RangeParser {
     private const val MAX_SINGLE_PREFIX = 24
     private const val MAX_RANGES = 4
     private const val MAX_TOTAL_ADDRESSES = 1024
+    private const val MAX_SINGLE_ADDRESSES = 256
 
     fun parse(input: String): List<String>? {
-        val parts = input.trim().split('/')
+        val value = input.trim()
+        if (value.isEmpty()) return null
+
+        // Explicit inclusive range: 192.168.1.10-192.168.1.80
+        if ('-' in value) {
+            if (value.count { it == '-' } != 1 || '/' in value) return null
+            val (startText, endText) = value.split('-', limit = 2)
+            val start = ipv4ToLong(startText.trim()) ?: return null
+            val end = ipv4ToLong(endText.trim()) ?: return null
+            if (start > end) return null
+            val count = end - start + 1
+            if (count > MAX_SINGLE_ADDRESSES) return null
+            if (!isAllowedTarget(start) || !isAllowedTarget(end)) return null
+            return (start..end).map(::longToIpv4)
+        }
+
+        val parts = value.split('/')
         if (parts.size !in 1..2) return null
         val base = ipv4ToLong(parts[0]) ?: return null
         val prefix = if (parts.size == 2) parts[1].toIntOrNull() ?: return null else 32
         if (prefix !in MAX_SINGLE_PREFIX..32) return null
         val hostBits = 32 - prefix
-        val count = 1 shl hostBits
+        val count = 1L shl hostBits
+        if (count > MAX_SINGLE_ADDRESSES) return null
         val mask = (0xFFFF_FFFFL shl hostBits) and 0xFFFF_FFFFL
         val network = base and mask
         // Exclude network and broadcast addresses for ordinary subnets.
         // /31 point-to-point and /32 host routes have no broadcast address to skip.
         val firstHost = if (prefix <= 30) network + 1 else network
         val lastHostExclusive = if (prefix <= 30) network + count - 1 else network + count
+        if (!isAllowedTarget(firstHost) || !isAllowedTarget(lastHostExclusive - 1)) return null
         return (firstHost until lastHostExclusive).map(::longToIpv4)
     }
 
-    /** Parses up to four explicit CIDRs/IPs, removes overlaps, and caps the total at 1024 hosts. */
+    // Reject unspecified, loopback, link-local, multicast, and reserved IPv4 space.
+    // RFC1918 private ranges remain available for explicitly authorized LAN diagnostics.
+    private fun isAllowedTarget(address: Long): Boolean {
+        val firstOctet = (address ushr 24).toInt()
+        val secondOctet = ((address ushr 16) and 255).toInt()
+        return when {
+            firstOctet == 0 -> false
+            firstOctet == 127 -> false
+            firstOctet == 169 && secondOctet == 254 -> false
+            firstOctet in 224..255 -> false
+            else -> true
+        }
+    }
+
+    /** Parses up to four explicit CIDRs, IP ranges, or individual IPs, removes overlaps, and caps the total at 1024 hosts. */
     fun parseMany(input: String): List<String>? {
         val ranges = input.lineSequence()
             .flatMap { it.split(',', ';').asSequence() }

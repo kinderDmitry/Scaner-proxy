@@ -695,7 +695,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         when (scanScope) {
                             "Весь мир" -> "Поиск опубликованных конфигураций из открытых источников разных стран."
                             "Локальная сеть" -> "Поиск открытых SOCKS5 и HTTP CONNECT портов в текущей Wi-Fi сети. Проверяются только локальные адреса."
-                            else -> "Проверка нескольких заданных IPv4/CIDR диапазонов. До 4 диапазонов, каждый не шире /24; суммарно до 1024 адресов."
+                            else -> "Проверка заданных IPv4/CIDR и диапазонов вида 192.168.1.1-192.168.1.100. До 4 диапазонов по 256 IP, суммарно до 1024 уникальных адресов."
                         },
                         color = TextMuted, fontSize = 12.sp, lineHeight = 15.sp
                     )
@@ -704,7 +704,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             value = targetRange,
                             onValueChange = { targetRange = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("IPv4 / CIDR · каждый диапазон с новой строки") },
+                            label = { Text("IPv4 / CIDR / начало-конец · по одному на строку") },
                             minLines = 2,
                             maxLines = 4,
                             enabled = !loading,
@@ -727,7 +727,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                                 unfocusedTextColor = TextPrimary
                             )
                         )
-                        Text("До 4 строк или CIDR через запятую; максимум 1024 уникальных IP и 8 TCP-портов. Пересечения автоматически объединяются. Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
+                        Text("Форматы: 192.168.1.10-192.168.1.80, 192.168.1.0/24 или одиночный IP. До 4 диапазонов, максимум 256 адресов в каждом и 1024 уникальных IP суммарно; до 8 TCP-портов. Пересечения объединяются. Только свои или письменно разрешённые сети. Открытый порт не доказывает наличие прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
                     }
                     if (scanScope == "Весь мир") {
                         val scanFilters = SupportedProxyProtocols
