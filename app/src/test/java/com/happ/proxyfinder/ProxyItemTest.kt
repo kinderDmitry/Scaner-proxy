@@ -28,7 +28,7 @@ class ProxyItemTest {
             id = "slow", host = "slow.example", rawConfig = "vless://slow"
         )
         val unchecked = item("Не проверен", null).copy(
-            id = "unchecked", host = "unknown.example", rawConfig = "vless://unchecked"
+            id = "unchecked", host = "unknown.example", rawConfig = "vless://unchecked", checkedAt = null
         )
         val failed = item("Проверка не пройдена: timeout", null).copy(
             id = "failed", host = "dead.example", rawConfig = "vless://failed", checkedAt = 2L
