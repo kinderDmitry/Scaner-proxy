@@ -342,8 +342,8 @@ class ProxyRepository(private val context: Context) {
         portsInput: String,
         onProgress: suspend (String) -> Unit
     ): EndpointScanResult = withContext(Dispatchers.IO) {
-        val addresses = Ipv4RangeParser.parse(rangeInput)
-            ?: return@withContext EndpointScanResult(emptyList(), "Укажи корректный IPv4-адрес или CIDR не шире /24")
+        val addresses = Ipv4RangeParser.parseMany(rangeInput)
+            ?: return@withContext EndpointScanResult(emptyList(), "Укажи до 4 корректных IPv4/CIDR диапазонов. Каждый диапазон не шире /24, суммарно не более 1024 адресов.")
         val ports = portsInput.split(',', ' ', ';', '\n', '\t')
             .mapNotNull { it.trim().toIntOrNull() }
             .filter { it in 1..65535 }.distinct().take(8)
@@ -1438,12 +1438,16 @@ internal object ConfigParser {
 
 /** Validates a deliberately bounded IPv4 range for opt-in, authorized diagnostics. */
 internal object Ipv4RangeParser {
+    private const val MAX_SINGLE_PREFIX = 24
+    private const val MAX_RANGES = 4
+    private const val MAX_TOTAL_ADDRESSES = 1024
+
     fun parse(input: String): List<String>? {
         val parts = input.trim().split('/')
         if (parts.size !in 1..2) return null
         val base = ipv4ToLong(parts[0]) ?: return null
         val prefix = if (parts.size == 2) parts[1].toIntOrNull() ?: return null else 32
-        if (prefix !in 24..32) return null
+        if (prefix !in MAX_SINGLE_PREFIX..32) return null
         val hostBits = 32 - prefix
         val count = 1 shl hostBits
         val mask = (0xFFFF_FFFFL shl hostBits) and 0xFFFF_FFFFL
@@ -1453,6 +1457,25 @@ internal object Ipv4RangeParser {
         val firstHost = if (prefix <= 30) network + 1 else network
         val lastHostExclusive = if (prefix <= 30) network + count - 1 else network + count
         return (firstHost until lastHostExclusive).map(::longToIpv4)
+    }
+
+    /** Parses up to four explicit CIDRs/IPs, removes overlaps, and caps the total at 1024 hosts. */
+    fun parseMany(input: String): List<String>? {
+        val ranges = input.lineSequence()
+            .flatMap { it.split(',', ';').asSequence() }
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toList()
+        if (ranges.isEmpty() || ranges.size > MAX_RANGES) return null
+        val unique = LinkedHashSet<String>()
+        for (range in ranges) {
+            val addresses = parse(range) ?: return null
+            for (address in addresses) {
+                unique.add(address)
+                if (unique.size > MAX_TOTAL_ADDRESSES) return null
+            }
+        }
+        return unique.toList()
     }
 
     private fun ipv4ToLong(value: String): Long? {
