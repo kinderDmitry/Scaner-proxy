@@ -695,7 +695,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         when (scanScope) {
                             "Весь мир" -> "Поиск опубликованных конфигураций из открытых источников разных стран."
                             "Локальная сеть" -> "Поиск открытых SOCKS5 и HTTP CONNECT портов в текущей Wi-Fi сети. Проверяются только локальные адреса."
-                            else -> "Проверка заданного IPv4/CIDR диапазона. Ограничение: максимум /24 и 8 портов за запуск."
+                            else -> "Проверка нескольких заданных IPv4/CIDR диапазонов. До 4 диапазонов, каждый не шире /24; суммарно до 1024 адресов."
                         },
                         color = TextMuted, fontSize = 12.sp, lineHeight = 15.sp
                     )
@@ -704,8 +704,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             value = targetRange,
                             onValueChange = { targetRange = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("IPv4 / CIDR (например 192.168.1.0/24)") },
-                            singleLine = true,
+                            label = { Text("IPv4 / CIDR · каждый диапазон с новой строки") },
+                            minLines = 2,
+                            maxLines = 4,
                             enabled = !loading,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AccentCyan, focusedLabelColor = AccentCyan,
@@ -726,7 +727,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                                 unfocusedTextColor = TextPrimary
                             )
                         )
-                        Text("Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
+                        Text("До 4 строк или CIDR через запятую; максимум 1024 уникальных IP и 8 TCP-портов. Пересечения автоматически объединяются. Сканируй только свои или разрешённые диапазоны. Открытый порт ещё не означает, что это прокси.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
                     }
                     if (scanScope == "Весь мир") {
                         val scanFilters = SupportedProxyProtocols
@@ -746,7 +747,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             item(key = "localResultsHeader") {
                 if (scanScope != "Весь мир") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Text(if (scanScope == "Локальная сеть") "Результаты локальной сети" else "Результаты проверки диапазона", color = TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(if (scanScope == "Локальная сеть") "Результаты локальной сети" else "Результаты проверки диапазонов", color = TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         if (!loading && localResults.isEmpty() && errorMessage.isBlank()) {
                             Text("Открытые порты не обнаружены. Проверь подключение, диапазон и список портов. Проверяй только сети, на сканирование которых у тебя есть разрешение.", color = TextMuted, fontSize = 13.sp, lineHeight = 17.sp)
                         }
