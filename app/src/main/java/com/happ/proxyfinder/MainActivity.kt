@@ -78,18 +78,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Bg = Color(0xFF080D15)
-private val Surface = Color(0xFF101926)
-private val SurfaceRaised = Color(0xFF172437)
-private val AccentCyan = Color(0xFF36BCE8)
-private val AccentCyanDeep = Color(0xFF168CBF)
-private val AccentCyanSoft = Color(0xFF8BDCF5)
+private val Bg = Color(0xFF070B12)
+private val Surface = Color(0xFF0D1724)
+private val SurfaceRaised = Color(0xFF132235)
+private val AccentCyan = Color(0xFF35C8F4)
+private val AccentCyanDeep = Color(0xFF087FAE)
+private val AccentCyanSoft = Color(0xFF9CEBFF)
 private val Green = Color(0xFF52E6A6)
 private val Amber = Color(0xFFFFC76A)
 private val Red = Color(0xFFFF7189)
 private val TextPrimary = Color(0xFFF2F6FC)
 private val TextMuted = Color(0xFFA6B5C8)
-private val Line = Color(0xFF2B3B50)
+private val Line = Color(0xFF26394D)
 
 private val SupportedProxyProtocols = listOf(
     "VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2",
@@ -119,8 +119,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(7, 7, 7)
-        window.navigationBarColor = android.graphics.Color.rgb(7, 7, 7)
+        window.statusBarColor = android.graphics.Color.rgb(7, 11, 18)
+        window.navigationBarColor = android.graphics.Color.rgb(7, 11, 18)
         repository = ProxyRepository(this)
         setContent {
             val scheme = darkColorScheme(
@@ -631,8 +631,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("HAPP PROXY", color = TextPrimary, fontSize = 21.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                        Text("Поиск, проверка и экспорт прокси", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.65.sp)
+                        Text("SCANER PROXY X", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.25.sp)
+                        Text("NETWORK INTELLIGENCE", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
                     }
                     Box(
                         Modifier.clip(RoundedCornerShape(20.dp))
@@ -642,7 +642,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Icon(Icons.Default.Radar, null, tint = AccentCyan, modifier = Modifier.size(14.dp))
-                            Text("СКАНИРОВАНИЕ", color = AccentCyan, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+                            Text("LIVE SCANNER", color = AccentCyan, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
                         }
                     }
                 }
