@@ -411,7 +411,7 @@ class ProxyItemTest {
     @Test
     fun ipv4RangeParserAcceptsMultipleCidrsAndDeduplicatesOverlapsWithinAggregateLimit() {
         val addresses = Ipv4RangeParser.parseMany("192.168.1.0/30\n192.168.1.2/31\n10.0.0.7")
-        assertEquals(listOf("192.168.1.1", "192.168.1.2", "10.0.0.7"), addresses)
+        assertEquals(listOf("192.168.1.1", "192.168.1.2", "192.168.1.3", "10.0.0.7"), addresses)
     }
 
     @Test
