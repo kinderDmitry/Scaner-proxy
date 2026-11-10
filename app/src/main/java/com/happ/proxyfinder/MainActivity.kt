@@ -185,7 +185,7 @@ class MainActivity : ComponentActivity() {
                             val unique = items.distinctBy { it.rawConfig.trim() }
                                 .filter { it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", true) }
                             if (unique.isNotEmpty()) {
-                                val payload = "#subscription-ping-onopen-enabled: 1\n" + unique.joinToString("\n") { namedConfigForImport(it) }
+                                val payload = buildHappSubscription(unique)
                                 val send = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, payload)
@@ -202,6 +202,37 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+/**
+ * Builds a native Happ text subscription. Happ performs protocol-aware ping checks
+ * on open and applies its own latency sort, placing unavailable nodes at the bottom.
+ * Existing successful tunnel measurements provide a useful initial order before that check.
+ */
+internal fun buildHappSubscription(items: List<ProxyItem>): String {
+    val ordered = items.asSequence()
+        .filter { it.rawConfig.isNotBlank() && !it.protocol.equals("SOCKS4", ignoreCase = true) }
+        .distinctBy { it.rawConfig.trim() }
+        .sortedWith(
+            compareBy<ProxyItem> {
+                when {
+                    it.isTunnelVerified -> 0
+                    !it.isChecked -> 1
+                    else -> 2
+                }
+            }.thenBy { if (it.isTunnelVerified) it.latencyMs ?: Int.MAX_VALUE else Int.MAX_VALUE }
+                .thenBy { it.host.lowercase(java.util.Locale.ROOT) }
+        )
+        .map { namedConfigForImport(it) }
+        .toList()
+
+    val directives = listOf(
+        "#subscription-ping-onopen-enabled: 1",
+        "#subscriptions-sort-type: ping",
+        "#ping-type: proxy",
+        "#check-url-via-proxy: https://cp.cloudflare.com/generate_204"
+    )
+    return (directives + ordered).joinToString("\n")
 }
 
 internal fun normalizeProxySchemeForHapp(config: String): String {
@@ -887,11 +918,11 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
                             Text("Поделиться конфигурациями", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("${exportItems.size} узлов · включая непроверенные", fontSize = 11.sp, color = Color(0xFF0A3449))
+                            Text("${exportItems.size} узлов · Happ проверит и отсортирует по пингу", fontSize = 11.sp, color = Color(0xFF0A3449))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
-                    Text("JSON берётся напрямую из SQLite: все уникальные конфигурации с подтверждённым HTTPS-туннелем. Непроверенные и недоступные узлы исключаются.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                    Text("Для Happ включены проверка при открытии и сортировка по задержке: быстрые узлы выше, недоступные — внизу. Перед первой проверки сохраняется предварительный порядок по результатам сканера.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
                     OutlinedButton(onClick = onCopyAllJson, enabled = totalVerifiedCount > 0 || allItems.any { it.isExportReady }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.ContentCopy, null, tint = AccentCyan)
                         Spacer(Modifier.width(8.dp))

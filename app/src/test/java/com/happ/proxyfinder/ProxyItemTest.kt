@@ -18,6 +18,39 @@ class ProxyItemTest {
         checkedAt = 1L
     )
 
+
+    @Test
+    fun happSubscriptionEnablesNativePingSortingAndPlacesVerifiedFastNodesFirst() {
+        val fast = item("Проверен через HTTPS-туннель · HTTP 204", 35).copy(
+            id = "fast", host = "fast.example", rawConfig = "vless://fast"
+        )
+        val slow = item("Проверен через HTTPS-туннель · HTTP 204", 280).copy(
+            id = "slow", host = "slow.example", rawConfig = "vless://slow"
+        )
+        val unchecked = item("Не проверен", null).copy(
+            id = "unchecked", host = "unknown.example", rawConfig = "vless://unchecked"
+        )
+        val failed = item("Проверка не пройдена: timeout", null).copy(
+            id = "failed", host = "dead.example", rawConfig = "vless://failed", checkedAt = 2L
+        )
+        val socks4 = item("Проверен через HTTPS-туннель · HTTP 204", 5).copy(
+            id = "socks4", protocol = "SOCKS4", rawConfig = "socks4://legacy"
+        )
+
+        val subscription = buildHappSubscription(listOf(slow, failed, unchecked, socks4, fast))
+
+        assertTrue(subscription.startsWith(
+            "#subscription-ping-onopen-enabled: 1\n" +
+                "#subscriptions-sort-type: ping\n" +
+                "#ping-type: proxy\n" +
+                "#check-url-via-proxy: https://cp.cloudflare.com/generate_204\n"
+        ))
+        assertTrue(subscription.indexOf("vless://fast") < subscription.indexOf("vless://slow"))
+        assertTrue(subscription.indexOf("vless://slow") < subscription.indexOf("vless://unchecked"))
+        assertTrue(subscription.indexOf("vless://unchecked") < subscription.indexOf("vless://failed"))
+        assertFalse(subscription.contains("socks4://"))
+    }
+
     @Test
     fun happExportNormalizesSocks5SchemeWithoutChangingCredentialsOrEndpoint() {
         assertEquals(
