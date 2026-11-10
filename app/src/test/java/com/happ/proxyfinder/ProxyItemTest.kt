@@ -1,5 +1,6 @@
 package com.happ.proxyfinder
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,10 +55,10 @@ class ProxyItemTest {
     @Test
     fun hiddifySingBoxExportContainsOnlyVerifiedTypedOutbounds() {
         val socks = item("Проверен через HTTPS-туннель · HTTP 204", 42).copy(
-            id = "socks-node", rawConfig = "socks5://alice:secret@proxy.example:1080"
+            id = "socks-node", host = "proxy.example", port = 1080, rawConfig = "socks5://alice:secret@proxy.example:1080"
         )
         val vless = item("Проверен через HTTPS-туннель · HTTP 204", 95).copy(
-            id = "vless-node", protocol = "VLESS",
+            id = "vless-node", host = "vless.example", port = 443, protocol = "VLESS",
             rawConfig = "vless://00000000-0000-0000-0000-000000000000@vless.example:443?security=tls&type=tcp&sni=cdn.example"
         )
         val unchecked = item("Не проверен", null).copy(id = "unchecked", rawConfig = "socks5://unchecked")

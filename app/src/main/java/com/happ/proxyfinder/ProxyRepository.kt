@@ -934,7 +934,7 @@ private class ProxyStore(context: Context) : SQLiteOpenHelper(context, "proxy_re
         val exportable = readVerified().mapNotNull { item -> singBoxOutboundForVerified(item)?.let { item to it } }
         if (exportable.isEmpty()) throw IllegalStateException("Нет проверенных туннелей, поддерживаемых Hiddify/sing-box")
         val root = JSONObject()
-            .put("$"+"schema", "https://sing-box.sagernet.org/schema.json")
+            .put("\$schema", "https://sing-box.sagernet.org/schema.json")
             .put("log", JSONObject().put("level", "warn"))
             .put("outbounds", JSONArray(exportable.map { it.second }))
             .put("route", JSONObject().put("final", exportable.first().second.getString("tag")))
@@ -1610,7 +1610,7 @@ internal fun buildHiddifySingBoxConfig(items: Iterable<ProxyItem>): String {
         .mapNotNull(::singBoxOutboundForVerified).toList()
     require(outbounds.isNotEmpty()) { "Нет проверенных туннелей, поддерживаемых форматом Hiddify/sing-box" }
     return JSONObject()
-        .put("$"+"schema", "https://sing-box.sagernet.org/schema.json")
+        .put("\$schema", "https://sing-box.sagernet.org/schema.json")
         .put("log", JSONObject().put("level", "warn"))
         .put("outbounds", JSONArray(outbounds))
         .put("route", JSONObject().put("final", outbounds.first().getString("tag")))
