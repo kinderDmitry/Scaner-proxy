@@ -72,7 +72,7 @@ class ProxyItemTest {
         assertEquals(2, profiles.length())
 
         val socksProfile = profiles.getJSONObject(0)
-        assertEquals("🇺🇳 Геолокация не определена", socksProfile.getString("remarks"))
+        assertEquals("🏳️ Геолокация не определена", socksProfile.getString("remarks"))
         val socksOutbound = socksProfile.getJSONArray("outbounds").getJSONObject(0)
         assertEquals("socks", socksOutbound.getString("protocol"))
         val socksServer = socksOutbound.getJSONObject("settings").getJSONArray("servers").getJSONObject(0)
