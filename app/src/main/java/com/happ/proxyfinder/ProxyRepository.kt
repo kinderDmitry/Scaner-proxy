@@ -1617,6 +1617,73 @@ internal fun buildHiddifySingBoxConfig(items: Iterable<ProxyItem>): String {
         .toString(2)
 }
 
+
+/**
+ * Builds HAPP's Xray JSON-array import format. Each array entry is a complete,
+ * standalone Xray profile for one verified server; sing-box JSON is not accepted here.
+ * HAPP passes these profiles to Xray unchanged, so only supported, fully verified
+ * SOCKS5 and VLESS TCP+TLS nodes are emitted.
+ */
+internal fun buildHappVerifiedJson(items: Iterable<ProxyItem>): String {
+    val profiles = items.asSequence()
+        .filter { it.isExportReady }
+        .distinctBy { it.rawConfig.trim() }
+        .mapNotNull { item ->
+            val outbound = JSONObject()
+                .put("tag", "proxy")
+            when (item.protocol.uppercase(Locale.ROOT)) {
+                "SOCKS5" -> {
+                    val server = JSONObject()
+                        .put("address", item.host)
+                        .put("port", item.port)
+                    parseProxyCredentials(item.rawConfig)?.let { (username, password) ->
+                        server.put("users", JSONArray().put(JSONObject().put("user", username).put("pass", password)))
+                    }
+                    outbound.put("protocol", "socks")
+                        .put("settings", JSONObject().put("servers", JSONArray().put(server)))
+                }
+                "VLESS" -> {
+                    val config = VlessTcpTls.parse(item.rawConfig) ?: return@mapNotNull null
+                    if (!config.host.equals(item.host, true) || config.port != item.port) return@mapNotNull null
+                    outbound.put("protocol", "vless")
+                        .put("settings", JSONObject().put("vnext", JSONArray().put(
+                            JSONObject().put("address", config.host).put("port", config.port)
+                                .put("users", JSONArray().put(
+                                    JSONObject().put("id", config.id.toString()).put("encryption", "none")
+                                ))
+                        )))
+                        .put("streamSettings", JSONObject()
+                            .put("network", "tcp")
+                            .put("security", "tls")
+                            .put("tlsSettings", JSONObject()
+                                .put("serverName", config.serverName)
+                                .put("allowInsecure", false)
+                            )
+                        )
+                }
+                else -> return@mapNotNull null
+            }
+            val inbound = JSONObject()
+                .put("tag", "socks-in")
+                .put("listen", "127.0.0.1")
+                .put("port", 10808)
+                .put("protocol", "socks")
+                .put("settings", JSONObject().put("auth", "noauth").put("udp", true))
+            val label = proxyDisplayName(item).take(30).ifBlank { "Verified proxy" }
+            JSONObject()
+                .put("log", JSONObject().put("loglevel", "warning"))
+                .put("inbounds", JSONArray().put(inbound))
+                .put("outbounds", JSONArray().put(outbound).put(JSONObject().put("protocol", "freedom").put("tag", "direct")))
+                .put("remarks", label)
+                .put("meta", JSONObject().put("serverDescription", "HTTPS tunnel verified · ${item.latencyMs} ms"))
+        }
+        .toList()
+    require(profiles.isNotEmpty()) {
+        "Нет проверенных SOCKS5/VLESS TCP+TLS узлов, поддерживаемых JSON-импортом HAPP"
+    }
+    return JSONArray(profiles).toString(2)
+}
+
 /** Selects only working, unique configs for verified-only export. */
 internal fun verifiedExportItems(items: Iterable<ProxyItem>): List<ProxyItem> =
     items.asSequence().filter { it.isExportReady }.distinctBy { it.rawConfig.trim() }.toList()

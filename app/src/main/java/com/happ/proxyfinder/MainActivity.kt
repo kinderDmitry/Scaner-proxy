@@ -198,6 +198,17 @@ class MainActivity : ComponentActivity() {
                                 startActivity(Intent.createChooser(send, "Передать ${unique.size} прокси"))
                             } else Toast.makeText(this, "Нет проверенных туннелей для передачи в HAPP. Непроверенные узлы исключены.", Toast.LENGTH_LONG).show()
                         },
+                        onCopyHappJson = { items ->
+                            try {
+                                val payload = buildHappVerifiedJson(items)
+                                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("HAPP verified JSON", payload))
+                                val count = org.json.JSONArray(payload).length()
+                                Toast.makeText(this, "HAPP JSON скопирован: $count проверенных узлов", Toast.LENGTH_LONG).show()
+                            } catch (error: Exception) {
+                                Toast.makeText(this, error.message ?: "Нет проверенных узлов для HAPP", Toast.LENGTH_LONG).show()
+                            }
+                        },
                         onCopyAllJson = {
                             jsonFileLauncher.launch("hiddify-singbox-verified-${System.currentTimeMillis()}.json")
                         }
@@ -311,7 +322,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyAllJson: () -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: () -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var totalStoredCount by remember { mutableIntStateOf(0) }
     var totalVerifiedCount by remember { mutableIntStateOf(0) }
@@ -927,10 +938,20 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
                     Text("Для Happ включены проверка при открытии и сортировка по задержке: быстрые узлы выше, недоступные — внизу. Перед первой проверки сохраняется предварительный порядок по результатам сканера.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.padding(horizontal = 3.dp))
+                    OutlinedButton(
+                        onClick = { onCopyHappJson(exportItems) },
+                        enabled = exportItems.any { it.isExportReady && (it.protocol.equals("SOCKS5", true) || it.protocol.equals("VLESS", true)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, null, tint = Green)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Скопировать проверенный JSON для HAPP", color = Green)
+                    }
                     OutlinedButton(onClick = onCopyAllJson, enabled = totalVerifiedCount > 0 || allItems.any { it.isExportReady }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.ContentCopy, null, tint = AccentCyan)
                         Spacer(Modifier.width(8.dp))
-                        Text("Сохранить JSON всех рабочих конфигураций", color = AccentCyan)
+                        Text("Сохранить sing-box JSON для Hiddify", color = AccentCyan)
                     }
                     }
                 }
@@ -977,7 +998,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "disclaimer") {
                 Text(
-                    "При передаче в HAPP доступны все найденные конфигурации, в том числе непроверенные. Полный HTTPS-туннель проверяется у SOCKS4/SOCKS5/HTTP/HTTPS и VLESS TCP+TLS. Для VMess, Trojan, Shadowsocks, Hysteria2, TUIC и неподдерживаемых транспортов VLESS рабочий туннель не подтверждается.",
+                    "В HAPP JSON включаются только подтверждённые HTTPS-туннели SOCKS5 и VLESS TCP+TLS. Полный HTTPS-туннель проверяется у SOCKS4/SOCKS5/HTTP/HTTPS и VLESS TCP+TLS. Для VMess, Trojan, Shadowsocks, Hysteria2, TUIC и неподдерживаемых транспортов VLESS рабочий туннель не подтверждается.",
                     color = TextMuted.copy(alpha = 0.75f), fontSize = 11.sp, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                 )

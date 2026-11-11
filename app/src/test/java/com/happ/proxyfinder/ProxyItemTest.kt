@@ -52,6 +52,58 @@ class ProxyItemTest {
         assertFalse(subscription.contains("socks4://"))
     }
 
+
+    @Test
+    fun happJsonIsAnArrayOfStandaloneXrayProfilesForVerifiedSupportedNodesOnly() {
+        val socks = item("Проверен через HTTPS-туннель · HTTP 204", 42).copy(
+            id = "socks-node", host = "proxy.example", port = 1080,
+            rawConfig = "socks5://alice:secret@proxy.example:1080"
+        )
+        val vless = item("Проверен через HTTPS-туннель · HTTP 204", 95).copy(
+            id = "vless-node", host = "vless.example", port = 443, protocol = "VLESS",
+            rawConfig = "vless://00000000-0000-0000-0000-000000000000@vless.example:443?security=tls&type=tcp&sni=cdn.example"
+        )
+        val unchecked = item("Не проверен", null).copy(id = "unchecked")
+        val unsupported = item("Проверен через HTTPS-туннель · HTTP 204", 20).copy(
+            id = "http", protocol = "HTTP", rawConfig = "http://proxy.example:8080"
+        )
+
+        val profiles = org.json.JSONArray(buildHappVerifiedJson(listOf(socks, unchecked, unsupported, vless)))
+        assertEquals(2, profiles.length())
+
+        val socksProfile = profiles.getJSONObject(0)
+        assertEquals("🇺🇳 Геолокация не определена", socksProfile.getString("remarks"))
+        val socksOutbound = socksProfile.getJSONArray("outbounds").getJSONObject(0)
+        assertEquals("socks", socksOutbound.getString("protocol"))
+        val socksServer = socksOutbound.getJSONObject("settings").getJSONArray("servers").getJSONObject(0)
+        assertEquals("proxy.example", socksServer.getString("address"))
+        assertEquals("alice", socksServer.getJSONArray("users").getJSONObject(0).getString("user"))
+        assertEquals("secret", socksServer.getJSONArray("users").getJSONObject(0).getString("pass"))
+        assertEquals("socks-in", socksProfile.getJSONArray("inbounds").getJSONObject(0).getString("tag"))
+
+        val vlessOutbound = profiles.getJSONObject(1).getJSONArray("outbounds").getJSONObject(0)
+        assertEquals("vless", vlessOutbound.getString("protocol"))
+        assertEquals("00000000-0000-0000-0000-000000000000",
+            vlessOutbound.getJSONObject("settings").getJSONArray("vnext").getJSONObject(0)
+                .getJSONArray("users").getJSONObject(0).getString("id"))
+        assertEquals("cdn.example", vlessOutbound.getJSONObject("streamSettings")
+            .getJSONObject("tlsSettings").getString("serverName"))
+    }
+
+    @Test
+    fun happJsonRejectsUnverifiedAndUnsupportedNodes() {
+        val tcpOnly = item("TCP доступен · туннель не подтверждён", null)
+        val http = item("Проверен через HTTPS-туннель · HTTP 204", 50).copy(
+            protocol = "HTTP", rawConfig = "http://proxy.example:8080"
+        )
+        try {
+            buildHappVerifiedJson(listOf(tcpOnly, http))
+            throw AssertionError("Expected empty HAPP JSON set to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("Нет проверенных SOCKS5/VLESS"))
+        }
+    }
+
     @Test
     fun hiddifySingBoxExportContainsOnlyVerifiedTypedOutbounds() {
         val socks = item("Проверен через HTTPS-туннель · HTTP 204", 42).copy(
