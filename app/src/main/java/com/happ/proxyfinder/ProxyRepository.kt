@@ -259,7 +259,7 @@ class ProxyRepository(private val context: Context) {
         val filters = protocolFilters.map { it.uppercase(Locale.ROOT) }.toSet()
         val allProtocols = filters.isEmpty() || "ВСЕ ТИПЫ" in filters
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
-            filters.any { filter -> sourceSupports(source, filter) }
+            filters.any { filter -> isPublicFeedEligibleForProtocol(source.protocol, source.name, filter) }
         }
         val gate = Semaphore(if (allProtocols) 4 else 3)
         val results = coroutineScope {
