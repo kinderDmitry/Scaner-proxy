@@ -91,10 +91,13 @@ private val TextPrimary = Color(0xFFF2F6FC)
 private val TextMuted = Color(0xFFA6B5C8)
 private val Line = Color(0xFF26394D)
 
-private val SupportedProxyProtocols = listOf(
-    "VLESS", "VMESS", "TROJAN", "Shadowsocks", "ShadowsocksR", "Hysteria", "Hysteria2",
-    "TUIC", "AnyTLS", "Juicity", "WireGuard", "SSH", "SOCKS4", "SOCKS5", "HTTP", "HTTPS"
-)
+internal val SupportedProxyProtocols = listOf("VLESS", "SOCKS5")
+
+internal fun isSupportedByBothApps(protocol: String): Boolean =
+    protocol.trim().uppercase(java.util.Locale.ROOT) in SupportedProxyProtocols
+
+internal fun matchesCountrySelection(item: ProxyItem, selectedCountries: Set<String>): Boolean =
+    selectedCountries.isEmpty() || item.country in selectedCountries
 
 private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape(18.dp)): Modifier =
     this.clip(shape)
@@ -334,7 +337,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var sourceProgress by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var selectedProtocols by remember { mutableStateOf(setOf<String>()) }
-    var selectedCountry by remember { mutableStateOf("Все страны") }
+    var selectedCountries by remember { mutableStateOf(emptySet<String>()) }
     var onlyAvailable by remember { mutableStateOf(false) }
     var onlyFavorites by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
@@ -549,7 +552,16 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 scope.launch {
                     for (candidate in channel) {
                         try {
-                            val checked = repo.check(candidate)
+                            // Resolve country as soon as a public proxy candidate is discovered.
+                            val geoCandidate = runCatching {
+                                repo.resolveCountries(listOf(candidate)) { geoItem ->
+                                    withContext(Dispatchers.Main) {
+                                        allItems = mergeResolvedGeoResults(allItems, listOf(geoItem))
+                                    }
+                                    withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(geoItem)) }
+                                }.firstOrNull() ?: candidate
+                            }.getOrDefault(candidate)
+                            val checked = repo.check(geoCandidate)
                             withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(checked)) }
                             val previous = allItems.firstOrNull { it.rawConfig.trim() == checked.rawConfig.trim() }
                             allItems = (allItems.filterNot { it.rawConfig.trim() == checked.rawConfig.trim() } +
@@ -569,7 +581,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 }
             }
             try {
-                val requested = if (scanAllProtocols) emptySet() else scanFiltersSelected
+                val requested = if (scanAllProtocols) SupportedProxyProtocols.toSet() else scanFiltersSelected.filter { isSupportedByBothApps(it) }.toSet()
                 val fetched = repo.fetchStreaming(
                     requested,
                     onSource = { name ->
@@ -578,6 +590,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         }
                     },
                     onItem = { item ->
+                        if (isSupportedByBothApps(item.protocol) &&
+                            (scanAllProtocols || scanFiltersSelected.isEmpty() || scanFiltersSelected.any { it.equals(item.protocol, true) })) {
                         withContext(Dispatchers.Main) {
                             discoveredCount++
                             checkingCount++
@@ -586,6 +600,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             }
                         }
                         channel.send(item)
+                        }
                     }
                 )
                 channel.close()
@@ -641,12 +656,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     }
 
     val protocols = SupportedProxyProtocols
-    val countries = remember(allItems) { listOf("Все страны") + allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
-    val visible = remember(allItems, query, selectedProtocols, selectedCountry, onlyAvailable, onlyFavorites) { allItems.filter { item ->
+    val countries = remember(allItems) { allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
+    val visible = remember(allItems, query, selectedProtocols, selectedCountries, onlyAvailable, onlyFavorites) { allItems.filter { item ->
         val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}"
         (query.isBlank() || haystack.contains(query, true)) &&
+            isSupportedByBothApps(item.protocol) &&
             (selectedProtocols.isEmpty() || selectedProtocols.any { item.protocol.equals(it, true) }) &&
-            (selectedCountry == "Все страны" || item.country == selectedCountry) &&
+            matchesCountrySelection(item, selectedCountries) &&
             (!onlyAvailable || item.isTunnelVerified) && (!onlyFavorites || item.favorite)
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
     val displayedItems = remember(visible, displayLimit) { visible.take(displayLimit) }
@@ -778,13 +794,13 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     if (scanScope == "Весь мир") {
                         val scanFilters = SupportedProxyProtocols
                         Text("Протоколы для поиска", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                        Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == scanFilters.size) "Все типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text("Можно выбрать несколько протоколов одновременно. Сброс выбора включает все типы.", color = TextMuted, fontSize = 11.sp)
+                        Text(if (scanFiltersSelected.isEmpty() || scanFiltersSelected.size == scanFilters.size) "Все поддерживаемые типы включены" else "Выбрано: ${scanFiltersSelected.joinToString(", ")}", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Доступны только общие типы HAPP и Hiddify: VLESS и SOCKS5.", color = TextMuted, fontSize = 11.sp)
                         MultiSelectChips(
                             items = scanFilters,
                             selected = scanFiltersSelected,
                             onChange = { scanFiltersSelected = it; errorMessage = "" },
-                            allLabel = "Все типы",
+                            allLabel = "Все поддерживаемые",
                             enabled = !loading
                         )
                     }
@@ -879,7 +895,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     )
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Очистить", tint = TextMuted) }
                     IconButton(onClick = { showFilters = !showFilters }) {
-                        Icon(Icons.Default.Tune, "Фильтры", tint = if (showFilters || selectedProtocols.isNotEmpty() || selectedCountry != "Все страны") AccentCyan else TextMuted)
+                        Icon(Icons.Default.Tune, "Фильтры", tint = if (showFilters || selectedProtocols.isNotEmpty() || selectedCountries.isNotEmpty()) AccentCyan else TextMuted)
                     }
                 }
             }
@@ -888,9 +904,9 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     Column(Modifier.fillMaxWidth().premiumPanel(RoundedCornerShape(17.dp)).padding(13.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Фильтры результатов", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                         Text("Протокол", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        MultiSelectChips(items = protocols, selected = selectedProtocols, onChange = { selectedProtocols = it }, allLabel = "Все протоколы")
-                        Text("Страна", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        FlowChips(items = countries, selected = selectedCountry, onSelect = { selectedCountry = it })
+                        MultiSelectChips(items = protocols, selected = selectedProtocols, onChange = { selectedProtocols = it }, allLabel = "Все поддерживаемые")
+                        Text("Страны (можно несколько)", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        MultiSelectChips(items = countries, selected = selectedCountries, onChange = { selectedCountries = it }, allLabel = "Все страны")
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(selected = onlyAvailable, onClick = { onlyAvailable = !onlyAvailable }, label = { Text("Туннель проверен") }, leadingIcon = if (onlyAvailable) ({ Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) }) else null)
                             FilterChip(selected = onlyFavorites, onClick = { onlyFavorites = !onlyFavorites }, label = { Text("Избранное") }, leadingIcon = if (onlyFavorites) ({ Icon(Icons.Default.Favorite, null, Modifier.size(16.dp)) }) else null)
