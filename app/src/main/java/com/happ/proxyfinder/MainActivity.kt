@@ -586,7 +586,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     requested,
                     onSource = { name ->
                         withContext(Dispatchers.Main) {
-                            sourceProgress = if (scanAllProtocols) "Все протоколы · $name" else "Выбранные протоколы · $name"
+                            sourceProgress = if (scanAllProtocols) "Все поддерживаемые типы · $name" else "Выбранные протоколы · $name"
                         }
                     },
                     onItem = { item ->
