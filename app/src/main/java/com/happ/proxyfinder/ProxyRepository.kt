@@ -120,8 +120,7 @@ class ProxyRepository(private val context: Context) {
         Source("monosans · SOCKS5", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt", "socks5"),
         Source("monosans · SOCKS4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt", "socks4"),
         Source("monosans · HTTP", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt", "http"),
-        Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https")
-
+        Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https"),
         Source("Proxio · Live SOCKS5", "https://raw.githubusercontent.com/proxio-io/proxy-list/main/socks5.txt", "socks5"),
         Source("Proxmint · Revalidated SOCKS5", "https://raw.githubusercontent.com/proxmint/free-proxy-list/main/proxies/socks5.txt", "socks5"),
         Source("JetKai · Online SOCKS5", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt", "socks5"),
