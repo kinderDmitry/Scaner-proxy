@@ -1,5 +1,28 @@
 package com.happ.proxyfinder
 
+import android.content.Context
+import android.content.ContentValues
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.Proxy
+import java.net.URL
+import java.net.URI
+import android.util.Base64
+import java.util.Locale
+import java.io.FilterInputStream
+import java.io.InputStream
+
 /**
  * Public-feed routing for the protocol selector. Generic and mixed feeds may contain
  * SOCKS5/VLESS URIs too; excluding them here silently skipped globally published nodes.
@@ -32,30 +55,6 @@ internal fun isPublicFeedEligibleForProtocol(
         else -> false
     }
 }
-
-
-import android.content.Context
-import android.content.ContentValues
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.net.Proxy
-import java.net.URL
-import java.net.URI
-import android.util.Base64
-import java.util.Locale
-import java.io.FilterInputStream
-import java.io.InputStream
 
 /** Enforces a hard byte ceiling even when a remote feed uses chunked transfer encoding. */
 internal class BoundedInputStream(input: InputStream, private val maxBytes: Long) : FilterInputStream(input) {
