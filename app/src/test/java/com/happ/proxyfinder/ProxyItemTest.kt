@@ -594,4 +594,29 @@ class ProxyItemTest {
         assertFalse(matchesCountrySelection(japan, setOf("Germany", "France")))
     }
 
+
+    @Test
+    fun publicFeedSelectionIncludesMixedAndGenericFeedsForSharedProtocols() {
+        assertTrue(isPublicFeedEligibleForProtocol("mixed", "Morpheus · Best", "SOCKS5"))
+        assertTrue(isPublicFeedEligibleForProtocol(null, "Public URI catalog", "SOCKS5"))
+        assertTrue(isPublicFeedEligibleForProtocol("mixed", "Morpheus · Best", "VLESS"))
+        assertTrue(isPublicFeedEligibleForProtocol(null, "Public URI catalog", "VLESS"))
+    }
+
+    @Test
+    fun publicFeedSelectionKeepsDedicatedFeedsProtocolSpecific() {
+        assertTrue(isPublicFeedEligibleForProtocol("socks5", "SOCKS5 feed", "SOCKS5"))
+        assertFalse(isPublicFeedEligibleForProtocol("socks5", "SOCKS5 feed", "VLESS"))
+        assertTrue(isPublicFeedEligibleForProtocol("vless", "VLESS feed", "VLESS"))
+        assertFalse(isPublicFeedEligibleForProtocol("vless", "VLESS feed", "SOCKS5"))
+        assertFalse(isPublicFeedEligibleForProtocol("socks4", "SOCKS4 feed", "SOCKS5"))
+    }
+
+    @Test
+    fun publicFeedSelectionIsCaseInsensitiveAndRejectsUnknownProtocol() {
+        assertTrue(isPublicFeedEligibleForProtocol("MIXED", "catalog", "socks5"))
+        assertTrue(isPublicFeedEligibleForProtocol("SOCKS5", "catalog", "socks5"))
+        assertFalse(isPublicFeedEligibleForProtocol("socks5", "catalog", "unknown"))
+    }
+
 }
