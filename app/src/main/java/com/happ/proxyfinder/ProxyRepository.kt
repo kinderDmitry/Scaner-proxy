@@ -1,5 +1,39 @@
 package com.happ.proxyfinder
 
+/**
+ * Public-feed routing for the protocol selector. Generic and mixed feeds may contain
+ * SOCKS5/VLESS URIs too; excluding them here silently skipped globally published nodes.
+ */
+internal fun isPublicFeedEligibleForProtocol(
+    sourceProtocol: String?,
+    sourceName: String,
+    requestedProtocol: String
+): Boolean {
+    val sourceType = sourceProtocol?.trim()?.lowercase(Locale.ROOT)
+    val requested = requestedProtocol.trim().uppercase(Locale.ROOT)
+    return when (requested) {
+        "SOCKS5" -> sourceType == null || sourceType == "mixed" || sourceType == "socks5"
+        "SOCKS4" -> sourceType == "socks4"
+        "HTTP" -> sourceType == "http"
+        "HTTPS" -> sourceType == "https"
+        "HYSTERIA2" -> sourceType == "hysteria2" || sourceType == "mixed"
+        "TUIC" -> sourceType == "tuic" || sourceType == "mixed"
+        "TROJAN" -> sourceType == "trojan" || sourceType == "mixed" || sourceName.contains("3inker", true)
+        "VLESS" -> sourceType == null || sourceType == "vless" || sourceType == "mixed" ||
+            sourceName.contains("Vless", true) || sourceName.contains("3inker", true) ||
+            sourceName.contains("Pawdroid", true) || sourceName.contains("SylphNet", true)
+        "VMESS" -> sourceType == "vmess" || sourceType == "mixed" ||
+            sourceName.contains("3inker", true) || sourceName.contains("Pawdroid", true) ||
+            sourceName.contains("SylphNet", true)
+        "SHADOWSOCKS" -> sourceType == "mixed" || sourceName.contains("3inker", true) ||
+            sourceName.contains("Pawdroid", true)
+        "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" ->
+            sourceType == "mixed" || sourceType == null
+        else -> false
+    }
+}
+
+
 import android.content.Context
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
@@ -88,6 +122,13 @@ class ProxyRepository(private val context: Context) {
         Source("monosans · SOCKS4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt", "socks4"),
         Source("monosans · HTTP", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt", "http"),
         Source("monosans · HTTPS", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/https.txt", "https")
+
+        Source("Proxio · Live SOCKS5", "https://raw.githubusercontent.com/proxio-io/proxy-list/main/socks5.txt", "socks5"),
+        Source("Proxmint · Revalidated SOCKS5", "https://raw.githubusercontent.com/proxmint/free-proxy-list/main/proxies/socks5.txt", "socks5"),
+        Source("JetKai · Online SOCKS5", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt", "socks5"),
+        Source("Moleway · Live SOCKS5", "https://raw.githubusercontent.com/Moleway/Free-Proxy-List/main/socks5.txt", "socks5"),
+        Source("Maximilian · Verified SOCKS5", "https://raw.githubusercontent.com/maximilianfeix/free-proxy-list/main/socks5.txt", "socks5"),
+        Source("Trikiman · Public VLESS", "https://raw.githubusercontent.com/trikiman/vlessfilter/main/subs/vless/all.txt", "vless")
     )
 
     /**
@@ -101,22 +142,8 @@ class ProxyRepository(private val context: Context) {
     ): FetchSummary = withContext(Dispatchers.IO) {
         val filters = protocolFilters.map { it.uppercase(Locale.ROOT) }.toSet()
         val allProtocols = filters.isEmpty() || "ВСЕ ТИПЫ" in filters
-        fun sourceSupports(source: Source, filter: String): Boolean = when (filter) {
-            "SOCKS5" -> source.protocol.equals("socks5", true)
-            "SOCKS4" -> source.protocol.equals("socks4", true)
-            "HTTP" -> source.protocol.equals("http", true)
-            "HTTPS" -> source.protocol.equals("https", true)
-            "HYSTERIA2" -> source.protocol.equals("hysteria2", true) || source.protocol == "mixed"
-            "TUIC" -> source.protocol.equals("tuic", true) || source.protocol == "mixed"
-            "TROJAN" -> source.protocol.equals("trojan", true) || source.protocol == "mixed" || source.name.contains("3inker", true)
-            "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
-            "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
-            "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
-            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed" || source.protocol == null
-            else -> false
-        }
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
-            filters.any { filter -> sourceSupports(source, filter) }
+            filters.any { filter -> isPublicFeedEligibleForProtocol(source.protocol, source.name, filter) }
         }
         val seen = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val sourceCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
@@ -233,20 +260,6 @@ class ProxyRepository(private val context: Context) {
     suspend fun fetch(protocolFilters: Set<String>, onSource: suspend (String) -> Unit): FetchResult = withContext(Dispatchers.IO) {
         val filters = protocolFilters.map { it.uppercase(Locale.ROOT) }.toSet()
         val allProtocols = filters.isEmpty() || "ВСЕ ТИПЫ" in filters
-        fun sourceSupports(source: Source, filter: String): Boolean = when (filter) {
-            "SOCKS5" -> source.protocol.equals("socks5", true)
-            "SOCKS4" -> source.protocol.equals("socks4", true)
-            "HTTP" -> source.protocol.equals("http", true)
-            "HTTPS" -> source.protocol.equals("https", true)
-            "HYSTERIA2" -> source.protocol.equals("hysteria2", true) || source.protocol == "mixed"
-            "TUIC" -> source.protocol.equals("tuic", true) || source.protocol == "mixed"
-            "TROJAN" -> source.protocol.equals("trojan", true) || source.protocol == "mixed" || source.name.contains("3inker", true)
-            "VLESS" -> source.protocol.equals("vless", true) || source.protocol == "mixed" || source.name.contains("Vless", true) || source.name.contains("3inker", true)
-            "VMESS" -> source.protocol.equals("vmess", true) || source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true) || source.name.contains("SylphNet", true)
-            "SHADOWSOCKS" -> source.protocol == "mixed" || source.name.contains("3inker", true) || source.name.contains("Pawdroid", true)
-            "SHADOWSOCKSR", "HYSTERIA", "ANYTLS", "JUICITY", "WIREGUARD", "SSH" -> source.protocol == "mixed"
-            else -> false
-        }
         val selectedSources = if (allProtocols) sources else sources.filter { source ->
             filters.any { filter -> sourceSupports(source, filter) }
         }
