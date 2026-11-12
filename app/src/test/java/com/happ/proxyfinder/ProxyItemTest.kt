@@ -571,4 +571,27 @@ class ProxyItemTest {
         assertEquals(null, Ipv4RangeParser.parseMany("10.0.0.0/24\nnot-an-ip"))
     }
 
+
+    @org.junit.Test
+    fun searchProtocolAllowlistContainsOnlyTypesVerifiedAsCommonToHappAndHiddify() {
+        assertEquals(setOf("VLESS", "SOCKS5"), SupportedProxyProtocols.toSet())
+        assertTrue(isSupportedByBothApps("vless"))
+        assertTrue(isSupportedByBothApps("socks5"))
+        assertFalse(isSupportedByBothApps("vmess"))
+        assertFalse(isSupportedByBothApps("http"))
+        assertFalse(isSupportedByBothApps("socks4"))
+    }
+
+    @org.junit.Test
+    fun countryFilterSupportsMultipleSelectedCountriesAndAllWhenEmpty() {
+        val germany = item("Проверен через HTTPS-туннель · HTTP 204", 45).copy(country = "Germany", countryCode = "DE")
+        val france = item("Проверен через HTTPS-туннель · HTTP 204", 55).copy(country = "France", countryCode = "FR")
+        val japan = item("Проверен через HTTPS-туннель · HTTP 204", 65).copy(country = "Japan", countryCode = "JP")
+
+        assertTrue(matchesCountrySelection(germany, emptySet()))
+        assertTrue(matchesCountrySelection(germany, setOf("Germany", "France")))
+        assertTrue(matchesCountrySelection(france, setOf("Germany", "France")))
+        assertFalse(matchesCountrySelection(japan, setOf("Germany", "France")))
+    }
+
 }
