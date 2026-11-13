@@ -433,7 +433,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
         // Preserve protocols and configurations that have no existing node label.
         // When a feed already supplies a URI fragment, replace only that label with
         // the location-only name (flag, country and city).
-        return if (normalized.contains("://") && normalized.contains("#") && displayLabel.isNotBlank()) {
+        return if (normalized.contains("://") && displayLabel.isNotBlank()) {
             normalized.substringBefore("#") + "#" + encodeUriComponent(displayLabel)
         } else normalized
     }

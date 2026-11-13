@@ -29,7 +29,7 @@ class ProxyDisplayNameTest {
 
     @Test
     fun displayNameDoesNotLeakLegacyTitleWhenLocationIsUnknown() {
-        assertEquals("🏳️ Геолокация не определена", proxyDisplayName(item("", "", "")))
+        assertEquals("❗ Геолокация не определена", proxyDisplayName(item("", "", "")))
     }
     @Test
     fun happImportLabelUsesFlagCountryAndCityForVless() {
@@ -39,6 +39,20 @@ class ProxyDisplayNameTest {
             )
         )
         assertEquals("🇩🇪 Германия · Франкфурт", java.net.URI(config).fragment)
+    }
+
+    @Test
+    fun happImportAddsLocationLabelWhenVlessHasNoFragment() {
+        val config = namedConfigForImport(
+            item("Германия", "DE", "Берлин").copy(rawConfig = "vless://uuid@example.com:443?security=tls")
+        )
+        assertEquals("🇩🇪 Германия · Берлин", java.net.URI(config).fragment)
+    }
+
+    @Test
+    fun unsupportedProtocolIsMarkedWithExclamation() {
+        val unsupported = item("Германия", "DE", "Берлин").copy(protocol = "VMESS")
+        assertEquals("❗ 🇩🇪 Германия · Берлин", proxyDisplayName(unsupported))
     }
 
     @Test
