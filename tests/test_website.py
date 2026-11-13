@@ -8,6 +8,19 @@ ROOT = Path(__file__).parents[1]
 
 
 class WebsiteScriptTests(unittest.TestCase):
+    def test_upload_is_github_native_and_has_no_cloudflare_dependencies(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("login/device/code", html)
+        self.assertIn("incoming/upload.json", html)
+        self.assertNotIn("workers.dev", html)
+        self.assertNotIn("worker-url", html)
+        self.assertNotIn("upload-token", html)
+
+    def test_subscription_limit_selects_static_variant(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("all-' + limit + '.txt", html)
+        self.assertIn("all-0.txt", (ROOT / "scripts" / "build_catalog.py").read_text(encoding="utf-8"))
+
     def test_inline_javascript_is_valid(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
