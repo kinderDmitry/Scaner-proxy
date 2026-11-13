@@ -43,13 +43,27 @@ class SpeedMonitorService : Service() {
         if (job?.isActive != true) job = scope.launch {
             while (true) {
                 try {
-                    val batch = repo.loadSnapshot(5000).sortedBy { it.checkedAt ?: 0L }.take(48)
+                    val now = System.currentTimeMillis()
+                    // Recheck due native-protocol nodes, putting previously proven fast/stable
+                    // endpoints first while still cycling through stale and unverified entries.
+                    val batch = repo.loadSnapshot(5000)
+                        .filter { item ->
+                            item.supportsNativeTunnelCheck &&
+                                (item.needsNativeTunnelCheck ||
+                                    item.isTunnelVerified && now - (item.checkedAt ?: 0L) >= 15 * 60 * 1000L)
+                        }
+                        .sortedWith(
+                            compareByDescending<ProxyItem> { it.qualityScore }
+                                .thenBy { it.latencyMs ?: Int.MAX_VALUE }
+                                .thenBy { it.checkedAt ?: 0L }
+                        )
+                        .take(48)
                     if (batch.isNotEmpty()) {
                         val checked = repo.checkBatch(batch) { }
                         val checkedById = checked.associateBy { it.id }
                         val latest = repo.loadSnapshot(5000)
                         repo.saveSnapshot(latest.map { checkedById[it.id] ?: it })
-                        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Обновлено: ${checked.size} прокси · следующий цикл через 5 минут"))
+                        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Обновлено: ${checked.size} · лучшие узлы проверены первыми · цикл 5 минут"))
                     } else {
                         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Нет сохранённых прокси — сначала запусти поиск"))
                     }
