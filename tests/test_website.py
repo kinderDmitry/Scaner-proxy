@@ -10,7 +10,7 @@ ROOT = Path(__file__).parents[1]
 class WebsiteScriptTests(unittest.TestCase):
     def test_inline_javascript_is_valid(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
+        scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
         self.assertTrue(scripts, "website must contain its application script")
         for script in scripts:
             with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as source:
