@@ -44,8 +44,10 @@ export default {
       const headers = lines.filter(line => !line.trim() || line.trim().startsWith("#"));
       const nodes = lines.filter(line => /^(vless|socks5?):\/\//i.test(line.trim()));
       const requested = url.searchParams.get("limit") || "all";
-      const limit = requested === "all" ? nodes.length : Math.max(1, Math.min(5000, Number.parseInt(requested, 10) || 100));
-      const body = [...headers, ...nodes.slice(0, limit)].join("\n").trimEnd() + "\n";
+      // limit counts additional configs; the fastest Auto Pick is always included.
+      const additional = requested === "all" ? Math.max(0, nodes.length - 1) :
+        Math.max(0, Math.min(5000, Number.parseInt(requested, 10) || 0));
+      const body = [...headers, ...nodes.slice(0, additional + 1)].join("\n").trimEnd() + "\n";
       return new Response(body, { status: 200, headers: { ...cors, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "Profile-Update-Interval": "6" } });
     }
     if (url.pathname !== "/upload" || request.method !== "POST") return json({ error: "Not found" }, 404);

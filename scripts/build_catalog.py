@@ -303,6 +303,20 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
         return None
 
 
+def subscription_uri(uri: str, label: str) -> str:
+    parts = urllib.parse.urlsplit(uri)
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, urllib.parse.quote(label, safe="")))
+
+
+def subscription_lines(nodes: list[dict[str, Any]]) -> list[str]:
+    if not nodes:
+        return []
+    lines = [subscription_uri(nodes[0]["uri"], "⚡ Автоподбор")]
+    lines.extend(subscription_uri(node["uri"], f"Конфигурация {index}")
+                 for index, node in enumerate(nodes[1:], start=1))
+    return lines
+
+
 def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None:
     sub = site_dir / "sub"
     sub.mkdir(parents=True, exist_ok=True)
@@ -310,17 +324,11 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
     groups = {"all": verified, "vless": [x for x in verified if x["protocol"] == "VLESS"],
               "socks5": [x for x in verified if x["protocol"] == "SOCKS5"]}
     for key, nodes in groups.items():
-        lines = [x["uri"] for x in nodes]
+        lines = subscription_lines(nodes) if key == "all" else [x["uri"] for x in nodes]
         body = "#profile-title: Scaner Proxy X\n#profile-update-interval: 6\n# Scaner Proxy X — проверено через HTTPS-туннель\n" + "\n".join(lines)
         if lines: body += "\n"
         (sub / (key + ".txt")).write_text(body, encoding="utf-8")
         (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\n", encoding="ascii")
-    payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
-        "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
-        "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps", "services")} for x in verified]}
-    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
 
 def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
     raw = fetch_uploaded()
