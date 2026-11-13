@@ -126,8 +126,9 @@ class OutputTests(unittest.TestCase):
             site.mkdir()
             current = site / "data.json"
             current.write_text("previous-good-catalog")
-            with self.assertRaises(RuntimeError):
-                mod.build(sources, "missing-sing-box", site)
+            with patch.object(mod, "fetch_uploaded", return_value=[]):
+                result = mod.build(sources, "missing-sing-box", site)
+            self.assertEqual(result, {"candidates": 0, "verified": 0})
             self.assertEqual(current.read_text(), "previous-good-catalog")
 
 
