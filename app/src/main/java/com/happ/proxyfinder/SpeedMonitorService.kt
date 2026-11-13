@@ -78,8 +78,8 @@ class SpeedMonitorService : Service() {
 
     /** Android 15 limits dataSync foreground services to six hours per 24-hour window. */
     override fun onTimeout(startId: Int, fgsType: Int) {
-        getSharedPreferences("proxy_finder", MODE_PRIVATE).edit()
-            .putBoolean("background_monitor_enabled", false).apply()
+        // Keep the user's monitoring preference enabled: WorkManager remains scheduled
+        // and resumes checks after Android's foreground dataSync time budget is exhausted.
         job?.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf(startId)
