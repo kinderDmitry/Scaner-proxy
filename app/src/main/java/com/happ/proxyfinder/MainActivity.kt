@@ -100,6 +100,17 @@ internal fun isSupportedByBothApps(protocol: String): Boolean =
 internal fun matchesCountrySelection(item: ProxyItem, selectedCountries: Set<String>): Boolean =
     selectedCountries.isEmpty() || item.country in selectedCountries
 
+internal fun rankExportableProxies(items: Iterable<ProxyItem>): List<ProxyItem> =
+    items.asSequence()
+        .filter { it.isExportReady && isSupportedByBothApps(it.protocol) && it.rawConfig.isNotBlank() }
+        .distinctBy { it.rawConfig.trim() }
+        .sortedWith(
+            compareByDescending<ProxyItem> { it.qualityScore }
+                .thenBy { it.latencyMs ?: Int.MAX_VALUE }
+                .thenByDescending { it.checkedAt ?: 0L }
+        )
+        .toList()
+
 private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape(18.dp)): Modifier =
     this.drawBehind {
         drawRoundRect(
@@ -117,14 +128,20 @@ private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
+    private var pendingHiddifyExport: List<ProxyItem> = emptyList()
     private val jsonFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) lifecycleScope.launch {
             try {
-                val count = withContext(Dispatchers.IO) {
-                    contentResolver.openOutputStream(uri)?.use { repository.exportVerifiedJson(it) }
-                        ?: error("Не удалось открыть файл")
+                val payload = withContext(Dispatchers.Default) {
+                    buildHiddifySingBoxConfig(rankExportableProxies(pendingHiddifyExport))
                 }
-                Toast.makeText(this@MainActivity, "Hiddify JSON сохранён: $count проверенных туннелей", Toast.LENGTH_LONG).show()
+                val count = withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(payload.toByteArray(Charsets.UTF_8))
+                        org.json.JSONObject(payload).getJSONArray("outbounds").length()
+                    } ?: error("Не удалось открыть файл")
+                }
+                Toast.makeText(this@MainActivity, "Hiddify JSON сохранён: $count узлов с учётом фильтров", Toast.LENGTH_LONG).show()
             } catch (error: Exception) {
                 Toast.makeText(this@MainActivity, "Ошибка сохранения: ${error.message}", Toast.LENGTH_LONG).show()
             }
@@ -223,8 +240,9 @@ class MainActivity : ComponentActivity() {
                                 Toast.makeText(this, error.message ?: "Нет проверенных узлов для HAPP", Toast.LENGTH_LONG).show()
                             }
                         },
-                        onCopyAllJson = {
-                            jsonFileLauncher.launch("hiddify-singbox-verified-${System.currentTimeMillis()}.json")
+                        onCopyAllJson = { items ->
+                            pendingHiddifyExport = items
+                            jsonFileLauncher.launch("hiddify-singbox-filtered-${System.currentTimeMillis()}.json")
                         }
                     )
                 }
@@ -336,7 +354,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: () -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var totalStoredCount by remember { mutableIntStateOf(0) }
     var totalVerifiedCount by remember { mutableIntStateOf(0) }
@@ -677,6 +695,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             (!onlyAvailable || item.isTunnelVerified) && (!onlyFavorites || item.favorite)
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
     val displayedItems = remember(visible, displayLimit) { visible.take(displayLimit) }
+    // Export uses the complete active filtered result set, not just the rendered page.
+    val exportItems = remember(visible) { rankExportableProxies(visible) }
 
     Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF050709), Bg, Color(0xFF010203))))) {
         LazyColumn(
@@ -946,8 +966,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "bulkImport") {
                 if (allItems.isNotEmpty()) {
-                    val exportItems = allItems.distinctBy { it.rawConfig.trim() }.filter { it.rawConfig.isNotBlank() }
-                                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Button(
                         onClick = { onBulkShare(exportItems) },
                         enabled = exportItems.isNotEmpty(),
@@ -975,7 +994,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Spacer(Modifier.width(8.dp))
                         Text("Скопировать проверенный JSON для HAPP", color = Green)
                     }
-                    OutlinedButton(onClick = onCopyAllJson, enabled = totalVerifiedCount > 0 || allItems.any { it.isExportReady }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    OutlinedButton(onClick = { onCopyAllJson(exportItems) }, enabled = exportItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.ContentCopy, null, tint = AccentCyan)
                         Spacer(Modifier.width(8.dp))
                         Text("Сохранить sing-box JSON для Hiddify", color = AccentCyan)
