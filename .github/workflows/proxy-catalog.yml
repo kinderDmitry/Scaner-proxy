@@ -1,0 +1,81 @@
+name: Proxy catalog and website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'sources.json'
+      - '.github/workflows/proxy-catalog.yml'
+  schedule:
+    - cron: '13 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: proxy-catalog-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: github-pages
+      url: \${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install sing-box core
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET_URL="$(python - <<'PY'
+          import json, urllib.request
+          req = urllib.request.Request('https://api.github.com/repos/SagerNet/sing-box/releases/latest', headers={'User-Agent':'ScanerProxyX'})
+          with urllib.request.urlopen(req, timeout=20) as r: data=json.load(r)
+          asset=next(a for a in data['assets'] if 'linux-amd64' in a['name'] and a['name'].endswith('.tar.gz'))
+          print(asset['browser_download_url'])
+          PY
+          )"
+          curl --fail --location --retry 3 "$ASSET_URL" -o /tmp/sing-box.tar.gz
+          mkdir -p /tmp/sing-box-unpack
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp/sing-box-unpack
+          install "$(find /tmp/sing-box-unpack -type f -name sing-box -print -quit)" /usr/local/bin/sing-box
+          sing-box version
+
+      - name: Run catalog tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Collect and verify public configs
+        env:
+          SING_BOX_BIN: /usr/local/bin/sing-box
+        run: python scripts/build_catalog.py --workers 8
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website
+
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
