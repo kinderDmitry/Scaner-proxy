@@ -1,3 +1,22 @@
+## [1.10.0] - 2026-11-13
+
+### Added
+- Filter-aware result pipeline: protocol, country, availability and favorites filters are applied before every bulk copy/share/JSON export.
+- Direct result-count selector: 25, 50, 100, 200, 500, 1,000 or all stored results (up to 5,000 loaded).
+- Persistent WorkManager fallback for background monitoring every 15 minutes when Android permits network work.
+- Hourly refresh of published public VLESS/SOCKS5 feeds during background monitoring.
+- Parallel GeoIP lookup through ipwho.is, ipapi.co and ipinfo.io.
+
+### Changed
+- Result filtering and sorting run on Dispatchers.Default with a short input debounce.
+- GeoIP enrichment is moved off the critical tunnel-check worker queue and processed separately in batches.
+- Best verified and lowest-latency candidates remain prioritized for repeated checks.
+
+### Notes
+- Android controls exact background execution timing; WorkManager is not a real-time guarantee.
+- Active IP/port checks remain limited to authorized ranges; public discovery uses published configuration feeds only.
+- HAPP/Hiddify exports include only verified, supported configurations matching the active result filters.
+
 ## 1.9.3
 - Сканирование нескольких IPv4/CIDR диапазонов за один запуск.
 - До 4 диапазонов, максимум /24 на диапазон и 1024 уникальных адреса суммарно.

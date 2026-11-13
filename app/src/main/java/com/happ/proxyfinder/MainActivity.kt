@@ -98,7 +98,32 @@ internal fun isSupportedByBothApps(protocol: String): Boolean =
     protocol.trim().uppercase(java.util.Locale.ROOT) in SupportedProxyProtocols
 
 internal fun matchesCountrySelection(item: ProxyItem, selectedCountries: Set<String>): Boolean =
-    selectedCountries.isEmpty() || item.country in selectedCountries
+    selectedCountries.isEmpty() || item.country in selectedCountries ||
+        item.countryCode.uppercase(java.util.Locale.ROOT) in selectedCountries
+
+internal fun filterProxyResults(
+    items: Iterable<ProxyItem>,
+    query: String,
+    selectedProtocols: Set<String>,
+    selectedCountries: Set<String>,
+    onlyAvailable: Boolean,
+    onlyFavorites: Boolean
+): List<ProxyItem> {
+    val normalizedQuery = query.trim()
+    return items.asSequence().filter { item ->
+        val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}"
+        (normalizedQuery.isBlank() || haystack.contains(normalizedQuery, ignoreCase = true)) &&
+            isSupportedByBothApps(item.protocol) &&
+            (selectedProtocols.isEmpty() || selectedProtocols.any { item.protocol.equals(it, true) }) &&
+            matchesCountrySelection(item, selectedCountries) &&
+            (!onlyAvailable || item.isTunnelVerified) &&
+            (!onlyFavorites || item.favorite)
+    }.sortedWith(
+        compareByDescending<ProxyItem> { it.qualityScore }
+            .thenBy { it.latencyMs ?: Int.MAX_VALUE }
+            .thenBy { it.host }
+    ).toList()
+}
 
 internal fun rankExportableProxies(items: Iterable<ProxyItem>): List<ProxyItem> =
     items.asSequence()
@@ -153,6 +178,11 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.rgb(2, 3, 4)
         window.navigationBarColor = android.graphics.Color.rgb(2, 3, 4)
         repository = ProxyRepository(this)
+        if (getSharedPreferences("proxy_finder", MODE_PRIVATE).getBoolean("background_monitor_enabled", false)) {
+            ProxyMonitorScheduler.enable(this)
+            val monitorIntent = Intent(this, SpeedMonitorService::class.java).apply { action = SpeedMonitorService.ACTION_START }
+            androidx.core.content.ContextCompat.startForegroundService(this, monitorIntent)
+        }
         setContent {
             val scheme = darkColorScheme(
                 primary = AccentCyan, onPrimary = Color(0xFF06131C), secondary = AccentCyanSoft,
@@ -359,6 +389,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     var totalStoredCount by remember { mutableIntStateOf(0) }
     var totalVerifiedCount by remember { mutableIntStateOf(0) }
     var displayLimit by remember { mutableIntStateOf(100) }
+    var showDisplayLimitMenu by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var loading by remember { mutableStateOf(false) }
     var checkingCount by remember { mutableIntStateOf(0) }
     var geoLoading by remember { mutableStateOf(false) }
@@ -574,6 +606,27 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
         scope.launch {
             val savedFavorites = withContext(Dispatchers.IO) { repo.loadFavorites() }
             val channel = Channel<ProxyItem>(capacity = 128)
+            val geoChannel = Channel<ProxyItem>(capacity = 256)
+            val geoWorker = scope.launch(Dispatchers.IO) {
+                val pendingGeo = ArrayList<ProxyItem>(20)
+                suspend fun resolveGeoBatch(batch: List<ProxyItem>) {
+                    repo.resolveCountries(batch) { geoItem ->
+                        withContext(Dispatchers.Main) {
+                            allItems = mergeResolvedGeoResults(allItems, listOf(geoItem))
+                            sourceProgress = "Геолокация: ${allItems.count { it.country.isNotBlank() }} узлов определено"
+                        }
+                        repo.saveSnapshot(listOf(geoItem))
+                    }
+                }
+                for (candidate in geoChannel) {
+                    pendingGeo.add(candidate)
+                    if (pendingGeo.size >= 20) {
+                        resolveGeoBatch(pendingGeo.toList())
+                        pendingGeo.clear()
+                    }
+                }
+                if (pendingGeo.isNotEmpty()) resolveGeoBatch(pendingGeo.toList())
+            }
             var discoveredCount = 0
             var checkedCount = 0
             var verifiedCount = 0
@@ -581,20 +634,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 scope.launch {
                     for (candidate in channel) {
                         try {
-                            // Resolve country as soon as a public proxy candidate is discovered.
-                            val geoCandidate = runCatching {
-                                repo.resolveCountries(listOf(candidate)) { geoItem ->
-                                    withContext(Dispatchers.Main) {
-                                        allItems = mergeResolvedGeoResults(allItems, listOf(geoItem))
-                                    }
-                                    withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(geoItem)) }
-                                }.firstOrNull() ?: candidate
-                            }.getOrDefault(candidate)
-                            val checked = repo.check(geoCandidate)
+                            val checked = repo.check(candidate)
                             withContext(Dispatchers.IO) { repo.saveSnapshot(listOf(checked)) }
                             val previous = allItems.firstOrNull { it.rawConfig.trim() == checked.rawConfig.trim() }
-                            allItems = (allItems.filterNot { it.rawConfig.trim() == checked.rawConfig.trim() } +
-                                checked.copy(favorite = previous?.favorite ?: (checked.id in savedFavorites))).takeLast(5000)
+                            val merged = checked.copy(favorite = previous?.favorite ?: (checked.id in savedFavorites))
+                            allItems = (allItems.filterNot { it.rawConfig.trim() == checked.rawConfig.trim() } + merged).takeLast(5000)
+                            geoChannel.send(merged)
                             checkedCount++
                             if (checked.isTunnelVerified) verifiedCount++
                             if (checkedCount % 20 == 0) {
@@ -634,6 +679,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                 )
                 channel.close()
                 workers.joinAll()
+                geoChannel.close()
+                geoWorker.join()
                 val latest = withContext(Dispatchers.IO) { repo.loadSnapshot(5000) }
                 // Resolve IP geolocation after discovery; update cards and persist each result immediately.
                 geoLoading = true
@@ -672,11 +719,15 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 channel.close()
+                geoChannel.close()
+                geoWorker.cancel()
                 workers.forEach { it.cancel() }
                 sourceStatus = "Потоковое сканирование прервано"
                 errorMessage = "Сканирование остановлено: ${error.message?.take(100) ?: "ошибка обработки"}. Уже проверенные записи сохранены в SQLite."
             } finally {
                 channel.close()
+                geoChannel.close()
+                geoWorker.cancel()
                 workers.forEach { it.cancel() }
                 loading = false
                 checkingCount = 0
@@ -686,14 +737,12 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
 
     val protocols = SupportedProxyProtocols
     val countries = remember(allItems) { allItems.asSequence().map { it.country }.filter { it.isNotBlank() }.distinct().sorted().toList() }
-    val visible = remember(allItems, query, selectedProtocols, selectedCountries, onlyAvailable, onlyFavorites) { allItems.filter { item ->
-        val haystack = "${item.host} ${item.port} ${item.protocol} ${item.source} ${item.title} ${item.country} ${item.countryCode} ${item.city}"
-        (query.isBlank() || haystack.contains(query, true)) &&
-            isSupportedByBothApps(item.protocol) &&
-            (selectedProtocols.isEmpty() || selectedProtocols.any { item.protocol.equals(it, true) }) &&
-            matchesCountrySelection(item, selectedCountries) &&
-            (!onlyAvailable || item.isTunnelVerified) && (!onlyFavorites || item.favorite)
-    }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
+    LaunchedEffect(allItems, query, selectedProtocols, selectedCountries, onlyAvailable, onlyFavorites) {
+        delay(120)
+        visible = withContext(Dispatchers.Default) {
+            filterProxyResults(allItems, query, selectedProtocols, selectedCountries, onlyAvailable, onlyFavorites)
+        }
+    }
     val displayedItems = remember(visible, displayLimit) { visible.take(displayLimit) }
     // Export uses the complete active filtered result set, not just the rendered page.
     val exportItems = remember(visible) { rankExportableProxies(visible) }
@@ -759,6 +808,8 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                                 backgroundMonitor = enabled
                                 context.getSharedPreferences("proxy_finder", 0).edit()
                                     .putBoolean("background_monitor_enabled", enabled).apply()
+                                if (enabled) ProxyMonitorScheduler.enable(context)
+                                else ProxyMonitorScheduler.disable(context)
                                 val serviceIntent = Intent(context, SpeedMonitorService::class.java).apply {
                                     action = if (enabled) SpeedMonitorService.ACTION_START else SpeedMonitorService.ACTION_STOP
                                 }
@@ -768,7 +819,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             colors = SwitchDefaults.colors(checkedThumbColor = AccentCyan, checkedTrackColor = AccentCyan.copy(alpha = 0.35f))
                         )
                     }
-                    Text("Работает при заблокированном экране. На Android 15+ система ограничивает длительную фоновую проверку шестью часами за 24 часа; после лимита сервис остановится безопасно.", color = Amber, fontSize = 11.sp, lineHeight = 14.sp)
+                    Text("Частая проверка работает через сервис, а WorkManager подстраховывает мониторинг после остановки сервиса и повторяет цикл примерно каждые 15 минут, когда Android разрешает фоновую работу и есть сеть.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
                 }
             }
             item(key = "scanMode") {
@@ -1008,8 +1059,26 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Результаты", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Text("Сначала самые быстрые по пингу", color = TextMuted, fontSize = 12.sp)
                     }
-                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(SurfaceRaised).padding(horizontal = 11.dp, vertical = 7.dp)) {
-                        Text("${visible.size} узлов", color = AccentCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Box(Modifier.clip(RoundedCornerShape(10.dp)).background(SurfaceRaised).padding(horizontal = 11.dp, vertical = 7.dp)) {
+                            Text("${visible.size} узлов", color = AccentCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Box {
+                            TextButton(onClick = { showDisplayLimitMenu = true }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)) {
+                                Text("Показывать: ${if (displayLimit >= 5000) "Все" else displayLimit}", color = AccentCyanSoft, fontSize = 11.sp)
+                            }
+                            DropdownMenu(expanded = showDisplayLimitMenu, onDismissRequest = { showDisplayLimitMenu = false }) {
+                                listOf(25, 50, 100, 200, 500, 1000, 5000).forEach { limit ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (limit == 5000) "Все (до 5000)" else "$limit") },
+                                        onClick = {
+                                            displayLimit = limit
+                                            showDisplayLimitMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

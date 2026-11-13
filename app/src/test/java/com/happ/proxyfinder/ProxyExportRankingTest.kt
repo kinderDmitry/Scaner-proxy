@@ -31,6 +31,42 @@ class ProxyExportRankingTest {
     }
 
     @Test
+    fun `active country and protocol filters restrict the exported source set`() {
+        val germanyVless = verified("de-vless", 42).copy(country = "Germany", countryCode = "DE")
+        val germanySocks = verified("de-socks", 55, protocol = "SOCKS5", raw = "socks://example.com:1080")
+            .copy(country = "Germany", countryCode = "DE")
+        val franceVless = verified("fr-vless", 30).copy(country = "France", countryCode = "FR")
+
+        val filtered = filterProxyResults(
+            listOf(germanyVless, germanySocks, franceVless),
+            query = "",
+            selectedProtocols = setOf("VLESS"),
+            selectedCountries = setOf("Germany"),
+            onlyAvailable = false,
+            onlyFavorites = false
+        )
+
+        assertEquals(listOf("de-vless"), rankExportableProxies(filtered).map { it.id })
+    }
+
+    @Test
+    fun `country code filter matches country code and export remains empty when no country matches`() {
+        val germany = verified("de-vless", 42).copy(country = "Germany", countryCode = "DE")
+
+        val filtered = filterProxyResults(
+            listOf(germany),
+            query = "",
+            selectedProtocols = setOf("VLESS"),
+            selectedCountries = setOf("FR"),
+            onlyAvailable = false,
+            onlyFavorites = false
+        )
+
+        assertTrue(filtered.isEmpty())
+        assertTrue(rankExportableProxies(filtered).isEmpty())
+    }
+
+    @Test
     fun `export ranks lower latency ahead when quality scores match`() {
         val slower = verified("slower", 180)
         val faster = verified("faster", 120)

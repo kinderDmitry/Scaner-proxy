@@ -743,20 +743,40 @@ class ProxyRepository(private val context: Context) {
             }
 
             val encodedIp = java.net.URLEncoder.encode(ip, "UTF-8")
-            return request("https://ipwho.is/$encodedIp?fields=success,country,country_code,city") { json ->
-                if (!json.optBoolean("success")) return@request null
-                val country = json.optString("country").takeUnless { it.isBlank() || it == "null" }.orEmpty()
-                if (country.isBlank()) return@request null
-                Triple(country,
-                    json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
-                    json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
-            } ?: request("https://ipapi.co/$encodedIp/json/") { json ->
-                val country = json.optString("country_name").takeUnless { it.isBlank() || it == "null" }.orEmpty()
-                if (country.isBlank() || json.has("error") && json.optBoolean("error")) return@request null
-                Triple(country,
-                    json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
-                    json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+            // Query independent GeoIP providers concurrently. The first valid response is
+            // preferred; the others provide resilience when one service is rate-limited.
+            val providerResults = coroutineScope {
+                listOf(
+                    async {
+                        request("https://ipwho.is/$encodedIp?fields=success,country,country_code,city") { json ->
+                            if (!json.optBoolean("success")) return@request null
+                            val country = json.optString("country").takeUnless { it.isBlank() || it == "null" }.orEmpty()
+                            if (country.isBlank()) return@request null
+                            Triple(country,
+                                json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
+                                json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+                        }
+                    },
+                    async {
+                        request("https://ipapi.co/$encodedIp/json/") { json ->
+                            val country = json.optString("country_name").takeUnless { it.isBlank() || it == "null" }.orEmpty()
+                            if (country.isBlank() || json.has("error") && json.optBoolean("error")) return@request null
+                            Triple(country,
+                                json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
+                                json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+                        }
+                    },
+                    async {
+                        request("https://ipinfo.io/$encodedIp/json") { json ->
+                            val code = json.optString("country").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty()
+                            if (code.length != 2) return@request null
+                            val country = Locale("", code).getDisplayCountry(Locale.getDefault()).ifBlank { code }
+                            Triple(country, code, json.optString("city").takeUnless { it == "null" }.orEmpty())
+                        }
+                    }
+                ).awaitAll()
             }
+            providerResults.firstNotNullOfOrNull { it }
         }
 
         coroutineScope {
