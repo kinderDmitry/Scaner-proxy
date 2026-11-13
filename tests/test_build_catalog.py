@@ -61,6 +61,12 @@ class FeedParsingTests(unittest.TestCase):
         self.assertFalse(mod.validate_source_url("http://raw.githubusercontent.com/u/r/main/list.txt"))
 
 
+class GeoTests(unittest.TestCase):
+    def test_country_flag(self):
+        self.assertEqual(mod.country_flag("DE"), "🇩🇪")
+        self.assertEqual(mod.country_flag(""), "❗")
+
+
 class VerificationTests(unittest.TestCase):
     def test_builds_vless_reality_outbound(self):
         item = mod.parse_link("vless://11111111-1111-4111-8111-111111111111@example.com:443?security=reality&sni=cdn.example.com&pbk=pub&sid=short&type=ws&path=%2Fws")

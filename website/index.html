@@ -72,7 +72,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
    const name=document.createElement('div');name.className='node-name';name.textContent=n.name||n.host;
    const endpoint=document.createElement('div');endpoint.className='endpoint';endpoint.textContent=n.host+':'+n.port;
    const foot=document.createElement('div');foot.className='node-foot';
-   const time=document.createElement('small');time.textContent='HTTPS-туннель · '+new Date(n.checkedAt).toLocaleString('ru-RU');
+   const time=document.createElement('small');time.textContent=(n.speedMbps?Number(n.speedMbps).toFixed(1)+' Мбит/с · ':'')+(n.latencyMs?n.latencyMs+' мс · ':'')+'Проверено · '+new Date(n.checkedAt).toLocaleString('ru-RU');
    const copy=document.createElement('button');copy.className='copy-node';copy.textContent='Копировать';copy.addEventListener('click',()=>copyText(n.uri,copy));
    foot.append(time,copy);card.append(top,name,endpoint,foot);root.append(card);
   }

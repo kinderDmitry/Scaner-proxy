@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Build a public catalog from explicitly published links; verify real HTTPS tunnels."""
 from __future__ import annotations
-import argparse, base64, concurrent.futures, datetime as dt, ipaddress, json, os, re, socket, subprocess, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, base64, concurrent.futures, datetime as dt, ipaddress, json, os, re, socket, subprocess, tempfile, time, threading, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "website"
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
-MAX_CANDIDATES = 600
-MAX_PUBLISHED = 250
+MAX_CANDIDATES = 1000
+MAX_PUBLISHED = 1000
 ALLOWED_SOURCE_HOSTS = {"raw.githubusercontent.com"}
 SUPPORTED = {"vless", "socks", "socks5"}
 TEST_URL = "https://www.gstatic.com/generate_204"
+SPEED_URL = "https://speed.cloudflare.com/__down?bytes=262144"
+GEO_CACHE: dict[str, dict[str, str]] = {}
+GEO_LOCK = threading.Lock()
 
 
 def decode_feed(body: bytes) -> str:
@@ -123,6 +126,43 @@ def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> lis
     return collected
 
 
+
+def country_flag(code: str) -> str:
+    normalized = code.upper()
+    if not re.fullmatch(r"[A-Z]{2}", normalized):
+        return "❗"
+    return "".join(chr(0x1F1E6 + ord(char) - ord("A")) for char in normalized)
+
+
+def lookup_geo(host: str) -> dict[str, str]:
+    try:
+        addresses = sorted({entry[4][0] for entry in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)})
+        address = next((value for value in addresses if ipaddress.ip_address(value.split("%", 1)[0]).is_global), "")
+        if not address:
+            return {"country": "", "countryCode": "", "city": "", "name": "❗"}
+        with GEO_LOCK:
+            cached = GEO_CACHE.get(address)
+        if cached:
+            return cached
+        request = urllib.request.Request(
+            "https://ipwho.is/" + urllib.parse.quote(address) + "?fields=success,country,country_code,city",
+            headers={"User-Agent": "ScanerProxyCatalog/1.0"})
+        with urllib.request.urlopen(request, timeout=4) as response:
+            data = json.loads(response.read(32768).decode("utf-8"))
+        country = str(data.get("country") or "").strip() if data.get("success") else ""
+        code = str(data.get("country_code") or "").strip().upper() if country else ""
+        city = str(data.get("city") or "").strip() if country else ""
+        name = country_flag(code) + (" " + country if country else "")
+        if city:
+            name += " · " + city
+        result = {"country": country, "countryCode": code, "city": city, "name": name or "❗"}
+        with GEO_LOCK:
+            GEO_CACHE[address] = result
+        return result
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return {"country": "", "countryCode": "", "city": "", "name": "❗"}
+
+
 def to_singbox_outbound(item: dict[str, Any]) -> dict[str, Any]:
     if item["protocol"] == "SOCKS5":
         out = {"type": "socks", "tag": "proxy", "server": item["host"], "server_port": item["port"], "version": "5"}
@@ -192,11 +232,24 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
                 if not ready:
                     return None
                 result = subprocess.run(["curl", "--silent", "--show-error", "--output", "/dev/null",
-                    "--write-out", "%{http_code}", "--max-time", "6", "--connect-timeout", "3",
+                    "--write-out", "%{http_code} %{time_total}", "--max-time", "6", "--connect-timeout", "3",
                     "--proxy", "socks5h://127.0.0.1:" + str(local_port), TEST_URL],
                     capture_output=True, text=True, timeout=8)
-                if result.returncode != 0 or result.stdout.strip() != "204":
+                parts = result.stdout.strip().split()
+                if result.returncode != 0 or len(parts) != 2 or parts[0] != "204":
                     return None
+                latency_ms = max(1, round(float(parts[1]) * 1000))
+                speed = subprocess.run(["curl", "--silent", "--show-error", "--output", "/dev/null",
+                    "--write-out", "%{http_code} %{speed_download}", "--max-time", "10", "--connect-timeout", "3",
+                    "--proxy", "socks5h://127.0.0.1:" + str(local_port), SPEED_URL],
+                    capture_output=True, text=True, timeout=12)
+                speed_parts = speed.stdout.strip().split()
+                speed_mbps = 0.0
+                if speed.returncode == 0 and len(speed_parts) == 2 and speed_parts[0] == "200":
+                    speed_mbps = round(float(speed_parts[1]) * 8 / 1_000_000, 2)
+                item.update(lookup_geo(item["host"]))
+                item["latencyMs"] = latency_ms
+                item["speedMbps"] = speed_mbps
                 item["verified"] = True
                 item["checkedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
                 item["test"] = "HTTPS 204 через туннель"
@@ -212,6 +265,7 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
 def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None:
     sub = site_dir / "sub"
     sub.mkdir(parents=True, exist_ok=True)
+    verified = sorted(verified, key=lambda x: (-float(x.get("speedMbps") or 0), int(x.get("latencyMs") or 2147483647), x["host"]))
     groups = {"all": verified, "vless": [x for x in verified if x["protocol"] == "VLESS"],
               "socks5": [x for x in verified if x["protocol"] == "SOCKS5"]}
     for key, nodes in groups.items():
@@ -223,12 +277,12 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
     payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
         "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
-        "nodes": [{k: x[k] for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test")} for x in verified]}
+        "nodes": [{k: x[k] for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps")} for x in verified]}
     (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
-    raw = fetch_uploaded() + fetch_sources(config_path)
+    raw = fetch_uploaded()
     candidates, per_source = {}, {}
     for source_name, line in raw:
         if per_source.get(source_name, 0) >= 200:
