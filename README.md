@@ -1,6 +1,6 @@
 # Scaner Proxy X — online catalog
 
-Static Black Neon web interface deployed to GitHub Pages. GitHub Actions refreshes the catalog every six hours.
+Static Black Neon web interface deployed to GitHub Pages. GitHub Actions starts a catalog verification run every five minutes. GitHub may delay scheduled starts; each run must finish successfully before the published data changes.
 
 ## Verification
 
@@ -20,7 +20,11 @@ After the first successful Pages deployment:
 - https://kinderdmitry.github.io/Scaner-proxy/sub/vless.txt
 - https://kinderdmitry.github.io/Scaner-proxy/sub/socks5.txt
 
-The plain-text URI list is intended as the standard subscription format for Happ and Hiddify. The response contains a six-hour update interval.
+The plain-text URI list is intended for Happ and Hiddify. The profile requests an update every six hours; the public catalog itself is rechecked by GitHub Actions on a five-minute schedule. The dynamic node limit requires the Cloudflare Worker URL in the website. Without it, the static link returns the full list.
+
+## Upload API
+
+The upload form requires a deployed Cloudflare Worker URL and the upload key configured by the service administrator. The Worker stores uploaded configuration data encrypted in the repository; the catalog workflow then verifies supported VLESS/SOCKS entries and republishes the site. Worker deployment is a separate manual workflow and requires the documented Cloudflare/GitHub secrets.
 
 ## Local tests
 

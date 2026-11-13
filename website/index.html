@@ -17,9 +17,10 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="hero"><div class="eyebrow">Black Neon · Verified nodes</div><h1>Прокси, которые<br>прошли проверку.</h1><p>Загрузи JSON вручную. Система проверит туннели и сформирует одну подписку: первым идёт автоподбор самого быстрого узла, затем выбранное количество конфигураций.</p></section>
 <section class="panel" style="padding:18px;margin-bottom:18px">
  <h2 class="section-title">Загрузить JSON в каталог</h2>
- <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,application/json" aria-label="JSON файл"><input id="worker-url" class="search" type="url" placeholder="Адрес API сайта (Cloudflare Worker)"></div>
- <div class="toolbar"><input id="upload-token" class="search" type="password" placeholder="Ключ загрузки"><button class="btn primary" id="upload">Загрузить и проверить</button></div>
- <div id="upload-status" class="foot" role="status">Импортированные конфигурации попадут в общий каталог после проверки.</div>
+ <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,application/json" aria-label="JSON файл"><input id="worker-url" class="search" type="url" autocomplete="url" placeholder="URL API Worker (https://…workers.dev)" aria-label="URL API Worker"></div>
+ <p class="foot" style="text-align:left;margin:0 0 10px">Выбери JSON из приложения. Для отправки укажи адрес API Worker и ключ загрузки, выданный администратором. Файл сохраняется в репозитории в зашифрованном виде; проверка запускается автоматически после приёма.</p>
+ <div class="toolbar"><input id="upload-token" class="search" type="password" autocomplete="off" placeholder="Ключ загрузки (выдаётся администратором)"><button class="btn primary" id="upload">Отправить JSON на проверку</button></div>
+ <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл, адрес API Worker и ключ загрузки.</div>
 </section>
 <section class="stats" aria-label="Статистика"><div class="stat"><label>Рабочих конфигураций</label><strong class="cyan" id="total">—</strong></div><div class="stat"><label>VLESS</label><strong id="vless">—</strong></div><div class="stat"><label>SOCKS5</label><strong id="socks">—</strong></div></section>
 <h2 class="section-title">Подписки для приложений</h2>
@@ -28,6 +29,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 </section>
 <div class="list-head"><h2 class="section-title" style="margin:0">Проверенные узлы</h2><span class="count" id="visible-count">Загрузка…</span></div>
 <div class="toolbar"><label for="subscription-limit" class="foot" style="align-self:center">Дополнительно к автоподбору:</label><select id="subscription-limit" class="select"><option value="all">Все рабочие</option><option value="0">Только автоподбор</option><option value="10">10 конфигураций</option><option value="25">25 конфигураций</option><option value="50">50 конфигураций</option><option value="100">100 конфигураций</option><option value="200">200 конфигураций</option><option value="500">500 конфигураций</option></select></div>
+<div id="subscription-hint" class="foot" style="text-align:left;margin:-4px 0 12px" role="status"></div>
 <div class="toolbar"><input id="search" class="search" type="search" placeholder="Поиск по IP, домену или названию" aria-label="Поиск по узлам"><select id="protocol" class="select" aria-label="Фильтр протокола"><option value="all">Все протоколы</option><option value="VLESS">VLESS</option><option value="SOCKS5">SOCKS5</option></select><button class="btn" id="reload">Обновить</button></div>
 <section id="nodes" class="node-list" aria-live="polite"><div class="state panel" style="grid-column:1/-1">Загружаем актуальный каталог…</div></section>
 <div id="updated" class="foot">Последнее обновление: ожидаем данные</div>
@@ -41,14 +43,26 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
  $('worker-url').value = $savedWorker; $('upload-token').value = '';
  const defaultSubscription = new URL('sub/all.txt', new URL('.', window.location.href)).href;
  function updateSubscription() {
-  const worker = $('worker-url').value.trim().replace(/\\/$/,'');
+  const worker = $('worker-url').value.trim().replace(/\/$/,'');
   const limit = $('subscription-limit').value;
   const subscription = worker ? worker + '/subscription?limit=' + encodeURIComponent(limit) : defaultSubscription;
   $('subscription-url').textContent = subscription;
+  const copyButton = document.querySelector('[data-copy-url="subscription-url"]');
+  copyButton.disabled = !worker && limit !== 'all';
+  $('subscription-hint').textContent = worker
+   ? 'Лимит применяется сервером. ⚡ Автоподбор всегда включён первым; выбранное число узлов добавляется после него.'
+   : (limit === 'all'
+      ? 'Сейчас используется статическая ссылка со всеми проверенными узлами. Для выбора точного количества укажи URL API Worker.'
+      : 'Выбранное количество пока не применяется: укажи URL API Worker. Копирование этой ссылки отключено, чтобы не выдать полный список вместо выбранного лимита.');
  }
  updateSubscription();
  $('subscription-limit').addEventListener('change', updateSubscription);
+ $('worker-url').addEventListener('input', updateSubscription);
  $('worker-url').addEventListener('change', () => { localStorage.setItem('scaner-worker-url',$('worker-url').value.trim()); updateSubscription(); });
+ $('upload-file').addEventListener('change', () => {
+  const file=$('upload-file').files[0];
+  if(file) $('upload-status').textContent='Выбран файл: '+file.name+' · '+(file.size/1024).toFixed(1)+' КБ. После отправки он будет проверен.';
+ });
  let nodes = [];
  async function copyText(value, button) {
   const old = button.textContent;
@@ -95,21 +109,25 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
  }
  document.querySelectorAll('[data-copy-url]').forEach(button=>button.addEventListener('click',()=>copyText($(button.dataset.copyUrl).textContent,button)));
  $('upload').addEventListener('click', async () => {
-  const file=$('upload-file').files[0], worker=$('worker-url').value.trim().replace(/\\/$/,'');
+  const file=$('upload-file').files[0], worker=$('worker-url').value.trim().replace(/\/$/,'');
   const token=$('upload-token').value.trim(), status=$('upload-status');
   if(!file||!worker||!token){status.textContent='Выбери JSON, укажи API-адрес и ключ загрузки.';return;}
   if(file.size>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ.';return;}
   $('upload').disabled=true;status.textContent='Отправка JSON…';
   try {
    const parsed=JSON.parse(await file.text());
+   const configs=Array.isArray(parsed)?parsed:parsed?.configs;
+   if(!Array.isArray(configs)||configs.length<1) throw new Error('В JSON не найден массив configs с конфигурациями.');
+   if(configs.length>1000) throw new Error('В одном файле допускается не более 1000 конфигураций.');
    const response=await fetch(worker+'/upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(parsed)});
    const result=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(result.error||('HTTP '+response.status));
    localStorage.setItem('scaner-worker-url',worker);
-   status.textContent='JSON принят. Каталог будет обновлён после проверки конфигураций.';
+   status.textContent='Принято: '+(result.accepted??configs.length)+' конфигураций. Файл сохранён; GitHub Actions запустит проверку и опубликует результат после её успешного завершения.';
   } catch(error){status.textContent='Ошибка загрузки: '+error.message;}
   finally{$('upload').disabled=false;}
  });
  $('search').addEventListener('input',render);$('protocol').addEventListener('change',render);$('reload').addEventListener('click',load);load();
+ setInterval(load,60000);
 })();
 </script></body></html>
