@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import android.widget.EditText
-import android.widget.LinearLayout
 import android.app.AlertDialog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -41,7 +39,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
@@ -194,72 +191,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun promptSiteUpload(items: List<ProxyItem>) {
-        val exportable = rankExportableProxies(items)
-        if (exportable.isEmpty()) {
-            Toast.makeText(this, "Нет проверенных конфигураций для публикации", Toast.LENGTH_LONG).show()
-            return
-        }
-        val preferences = getSharedPreferences("proxy_finder", MODE_PRIVATE)
-        val endpoint = EditText(this).apply {
-            hint = "https://your-worker.workers.dev"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-            setText(preferences.getString("site_upload_url", ""))
-        }
-        val token = EditText(this).apply {
-            hint = "Ключ загрузки"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText("")
-        }
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 12, 48, 0)
-            addView(endpoint)
-            addView(token)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Выгрузка на сайт")
-            .setMessage("Будет отправлен полный каталог проверенных конфигураций, независимо от текущих фильтров и лимита отображения: ${exportable.size}.")
-            .setView(layout)
-            .setPositiveButton("Отправить") { _, _ ->
-                val baseUrl = endpoint.text.toString().trim().trimEnd('/')
-                val secret = token.text.toString().trim()
-                if (!baseUrl.startsWith("https://") || secret.isBlank()) {
-                    Toast.makeText(this, "Укажи HTTPS-адрес API и ключ загрузки", Toast.LENGTH_LONG).show()
-                    return@setPositiveButton
-                }
-                preferences.edit().putString("site_upload_url", baseUrl).apply()
-                lifecycleScope.launch {
-                    try {
-                        val response = withContext(Dispatchers.IO) {
-                            val payload = buildSiteUploadJson(exportable)
-                            val connection = java.net.URL("$baseUrl/upload").openConnection() as java.net.HttpURLConnection
-                            connection.requestMethod = "POST"
-                            connection.connectTimeout = 15000
-                            connection.readTimeout = 20000
-                            connection.doOutput = true
-                            connection.setRequestProperty("Authorization", "Bearer $secret")
-                            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-                            val status = connection.responseCode
-                            val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
-                                ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                            connection.disconnect()
-                            if (status !in 200..299) error("HTTP $status: ${body.take(180)}")
-                            body
-                        }
-                        Toast.makeText(this@MainActivity, "Каталог отправлен на сайт: ${exportable.size} конфигураций", Toast.LENGTH_LONG).show()
-                    } catch (error: Exception) {
-                        Toast.makeText(this@MainActivity, "Ошибка выгрузки: ${error.message?.take(150)}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(2, 3, 4)
@@ -365,7 +296,6 @@ class MainActivity : ComponentActivity() {
                             pendingSiteExport = items
                             siteJsonFileLauncher.launch("scaner-proxy-site-" + System.currentTimeMillis() + ".json")
                         },
-                        onUploadToSite = { items -> promptSiteUpload(items) }
                     )
                 }
             }
@@ -492,7 +422,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit, onSaveSiteJson: (List<ProxyItem>) -> Unit, onUploadToSite: (List<ProxyItem>) -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit, onSaveSiteJson: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var totalStoredCount by remember { mutableIntStateOf(0) }
     var totalVerifiedCount by remember { mutableIntStateOf(0) }
@@ -1169,11 +1099,6 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Скачать JSON для сайта", color = Green)
                     }
                     Text("Сохраняет только проверенные узлы с учётом выбранных фильтров. Этот файл загружается через форму на сайте.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
-                    OutlinedButton(onClick = { onUploadToSite(allItems) }, enabled = allItems.any { it.isExportReady && (it.protocol.equals("SOCKS5", true) || it.protocol.equals("VLESS", true)) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                        Icon(Icons.Default.CloudUpload, null, tint = Green)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Выгрузить полный каталог на сайт", color = Green)
-                    }
                     }
                 }
             }
