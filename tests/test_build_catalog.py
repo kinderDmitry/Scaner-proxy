@@ -81,6 +81,21 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(outbound["type"], "socks")
         self.assertEqual(outbound["username"], "user")
 
+    def test_service_checks_report_http_status_and_timeouts(self):
+        from types import SimpleNamespace
+        responses = [
+            SimpleNamespace(returncode=0, stdout="204"),
+            SimpleNamespace(returncode=0, stdout="403"),
+            SimpleNamespace(returncode=28, stdout="")
+        ]
+        with patch.object(mod.subprocess, "run", side_effect=responses):
+            results = mod.check_services(10808)
+        self.assertTrue(results["YouTube"]["ok"])
+        self.assertFalse(results["Instagram"]["ok"])
+        self.assertEqual(results["Instagram"]["status"], 403)
+        self.assertFalse(results["ChatGPT"]["ok"])
+        self.assertIsNone(results["ChatGPT"]["status"])
+
     def test_rejects_private_and_unresolvable_hosts(self):
         with patch.object(mod.socket, "getaddrinfo", return_value=[(2, 1, 6, "", ("127.0.0.1", 0))]):
             self.assertFalse(mod.is_public_host("localhost"))
@@ -116,6 +131,19 @@ class OutputTests(unittest.TestCase):
                 result = mod.build(sources, "missing-sing-box", site)
             self.assertEqual(result, {"candidates": 0, "verified": 0})
             self.assertEqual(current.read_text(encoding="utf-8"), "previous-catalog")
+
+    def test_outputs_are_sorted_by_measured_speed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            site = Path(temp)
+            slower = {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
+                      "port": 1080, "name": "slow", "checkedAt": "2026-01-01", "test": "HTTPS",
+                      "speedMbps": 4.0, "latencyMs": 90}
+            faster = {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example",
+                      "port": 1080, "name": "fast", "checkedAt": "2026-01-01", "test": "HTTPS",
+                      "speedMbps": 40.0, "latencyMs": 120}
+            mod.write_outputs([slower, faster], site)
+            lines = [line for line in (site / "sub" / "all.txt").read_text().splitlines() if line.startswith("socks://")]
+            self.assertEqual(lines, [faster["uri"], slower["uri"]])
 
     def test_empty_run_preserves_existing_catalog(self):
         with tempfile.TemporaryDirectory() as temp:
