@@ -776,7 +776,7 @@ class ProxyRepository(private val context: Context) {
                     }
                 ).awaitAll()
             }
-            providerResults.firstNotNullOfOrNull { it }
+            return providerResults.firstNotNullOfOrNull { it }
         }
 
         coroutineScope {
