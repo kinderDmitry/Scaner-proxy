@@ -111,27 +111,43 @@ def fetch_sources(config_path: Path) -> list[tuple[str, str]]:
 
 
 def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> list[tuple[str, str]]:
-    """Read configs explicitly uploaded by the app/site; never execute imported data."""
+    """Read explicitly uploaded JSON; decrypt the browser's hybrid RSA/AES envelope."""
     if not config_path.exists():
         return []
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     if isinstance(payload, dict) and payload.get("encrypted") is True:
-        key_hex = os.environ.get("UPLOAD_ENCRYPTION_KEY", "")
-        if not re.fullmatch(r"[0-9a-fA-F]{64}", key_hex):
-            raise RuntimeError("UPLOAD_ENCRYPTION_KEY is required to decrypt uploaded JSON")
+        pem = os.environ.get("UPLOAD_PRIVATE_KEY_PEM", "")
+        if "BEGIN PRIVATE KEY" not in pem and "BEGIN RSA PRIVATE KEY" not in pem:
+            raise RuntimeError("UPLOAD_PRIVATE_KEY_PEM GitHub Actions secret is required")
         try:
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import padding
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            private_key = serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
+            if payload.get("algorithm") != "AES-256-GCM+RSA-OAEP-256":
+                raise ValueError("Unsupported upload encryption algorithm")
             iv = base64.b64decode(payload["iv"], validate=True)
             ciphertext = base64.b64decode(payload["ciphertext"], validate=True)
-            decrypted = AESGCM(bytes.fromhex(key_hex)).decrypt(iv, ciphertext, None)
+            wrapped_key = base64.b64decode(payload["wrappedKey"], validate=True)
+            if len(iv) != 12 or len(wrapped_key) < 256:
+                raise ValueError("Invalid encrypted envelope")
+            aes_key = private_key.decrypt(
+                wrapped_key,
+                padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                             algorithm=hashes.SHA256(), label=None))
+            if len(aes_key) != 32:
+                raise ValueError("Invalid AES key length")
+            decrypted = AESGCM(aes_key).decrypt(iv, ciphertext, None)
             payload = json.loads(decrypted.decode("utf-8"))
         except Exception as exc:
             raise ValueError("Uploaded JSON could not be decrypted or validated") from exc
     values = payload.get("configs", []) if isinstance(payload, dict) else payload
     if not isinstance(values, list):
         raise ValueError("Uploaded JSON must contain a configs array")
+    if len(values) > MAX_CANDIDATES:
+        raise ValueError("Uploaded JSON contains more than 1000 configurations")
     collected: list[tuple[str, str]] = []
-    for value in values[:MAX_CANDIDATES]:
+    for value in values:
         if isinstance(value, str):
             line = value
         elif isinstance(value, dict):
@@ -343,15 +359,24 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
               "socks5": [x for x in verified if x["protocol"] == "SOCKS5"]}
     for key, nodes in groups.items():
         lines = subscription_lines(nodes) if key == "all" else [x["uri"] for x in nodes]
-        body = "#profile-title: Scaner Proxy X\n#profile-update-interval: 6\n# Scaner Proxy X — проверено через HTTPS-туннель\n" + "\n".join(lines)
-        if lines: body += "\n"
+        body = "#profile-title: Scaner Proxy X\\n#profile-update-interval: 6\\n# Scaner Proxy X — проверено через HTTPS-туннель\\n" + "\\n".join(lines)
+        if lines: body += "\\n"
         (sub / (key + ".txt")).write_text(body, encoding="utf-8")
-        (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\n", encoding="ascii")
+        (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\\n", encoding="ascii")
+    # Static Pages cannot apply a query-string limit. Publish fixed-size variants instead.
+    all_lines = subscription_lines(verified)
+    for limit in (0, 10, 25, 50, 100, 200, 500):
+        selected = all_lines[:1 + limit] if all_lines else []
+        body = "#profile-title: Scaner Proxy X\\n#profile-update-interval: 6\\n# Scaner Proxy X — проверено через HTTPS-туннель\\n" + "\\n".join(selected)
+        if selected: body += "\\n"
+        (sub / ("all-" + str(limit) + ".txt")).write_text(body, encoding="utf-8")
+        (sub / ("all-" + str(limit) + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\\n", encoding="ascii")
     payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
         "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
         "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps", "services")} for x in verified]}
-    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+
 
 
 def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:

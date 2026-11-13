@@ -51,24 +51,36 @@ class FeedParsingTests(unittest.TestCase):
             self.assertTrue(result[1][1].startswith("socks5://"))
 
 
-    def test_decrypts_encrypted_uploaded_json(self):
+    def test_decrypts_hybrid_rsa_aes_uploaded_json(self):
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding, rsa
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_pem = private_key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption()).decode()
+        public_key = private_key.public_key()
         key = bytes(range(32))
         iv = bytes(range(12))
         clear = json.dumps({"configs": ["socks5://proxy.example:1080"]}).encode()
         encrypted = AESGCM(key).encrypt(iv, clear, None)
+        wrapped = public_key.encrypt(key, padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(), label=None))
         wrapper = {
             "encrypted": True,
-            "algorithm": "AES-256-GCM",
+            "algorithm": "AES-256-GCM+RSA-OAEP-256",
             "iv": base64.b64encode(iv).decode(),
-            "ciphertext": base64.b64encode(encrypted).decode()
+            "ciphertext": base64.b64encode(encrypted).decode(),
+            "wrappedKey": base64.b64encode(wrapped).decode()
         }
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "upload.json"
             path.write_text(json.dumps(wrapper), encoding="utf-8")
-            with patch.dict(os.environ, {"UPLOAD_ENCRYPTION_KEY": key.hex()}):
+            with patch.dict(os.environ, {"UPLOAD_PRIVATE_KEY_PEM": private_pem}):
                 result = mod.fetch_uploaded(path)
         self.assertEqual(result[0][1], "socks5://proxy.example:1080")
+
 
     def test_rejects_invalid_uploaded_json_shape(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -181,6 +193,23 @@ class OutputTests(unittest.TestCase):
             self.assertIn("🇳🇱 Netherlands — Amsterdam", urllib.parse.unquote(lines[1]))
             self.assertTrue(lines[2].startswith("socks://slow.example:1080"))
             self.assertIn("🇩🇪 Germany — Berlin", urllib.parse.unquote(lines[2]))
+
+    def test_static_subscription_limits_always_keep_auto_pick_first(self):
+        with tempfile.TemporaryDirectory() as temp:
+            site = Path(temp)
+            nodes = [
+                {"uri": f"socks://node{i}.example:1080", "protocol": "SOCKS5", "host": f"node{i}.example",
+                 "port": 1080, "speedMbps": float(100-i), "latencyMs": 20+i,
+                 "country": "Germany", "countryCode": "DE", "city": f"City{i}"}
+                for i in range(30)
+            ]
+            mod.write_outputs(nodes, site)
+            for limit in (0, 10, 25, 50, 100, 200, 500):
+                lines = [line for line in (site / "sub" / f"all-{limit}.txt").read_text().splitlines()
+                         if line.startswith("socks://")]
+                self.assertEqual(len(lines), min(30, limit + 1))
+                self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
+                self.assertTrue(lines[0].startswith("socks://node0.example:1080"))
 
     def test_duplicate_geo_labels_receive_unique_suffixes(self):
         nodes = [

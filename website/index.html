@@ -17,15 +17,15 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="hero"><div class="eyebrow">Каталог проверенных узлов</div><h1>Прокси, которые<br>прошли проверку.</h1><p>Загрузи JSON вручную. Система проверит туннели и сформирует одну подписку: первым идёт автоподбор самого быстрого узла, затем выбранное количество конфигураций.</p></section>
 <section class="panel" style="padding:18px;margin-bottom:18px">
  <h2 class="section-title">Загрузить JSON в каталог</h2>
- <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,application/json" aria-label="JSON файл"><input id="worker-url" class="search" type="url" autocomplete="url" placeholder="URL API Worker (https://…workers.dev)" aria-label="URL API Worker"></div>
- <p class="foot" style="text-align:left;margin:0 0 10px">В приложении нажми «Скачать JSON для сайта» — не выбирай Hiddify/sing-box JSON. Допускается файл до 2 МБ и 1000 конфигураций. Для отправки нужен заранее развёрнутый Cloudflare Worker, его URL и ключ загрузки. Файл сохраняется в репозитории в зашифрованном виде; проверка запускается автоматически после приёма.</p>
- <div class="toolbar"><input id="upload-token" class="search" type="password" autocomplete="off" placeholder="Ключ загрузки (выдаётся администратором)"><button class="btn primary" id="upload">Отправить JSON на проверку</button></div>
- <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл, адрес API Worker и ключ загрузки.</div>
+ <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,application/json" aria-label="JSON файл"></div>
+ <p class="foot" style="text-align:left;margin:0 0 10px">Выбери JSON из приложения («Скачать JSON для сайта»). Поддерживается до 2 МБ и 1000 конфигураций. Для записи в репозиторий потребуется подтвердить вход через GitHub. Содержимое шифруется в браузере до отправки.</p>
+ <div class="toolbar"><button class="btn primary" id="upload">Авторизоваться и отправить JSON</button></div>
+ <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл. Cloudflare не используется.</div>
 </section>
 <section class="stats" aria-label="Статистика"><div class="stat"><label>Рабочих конфигураций</label><strong class="cyan" id="total">—</strong></div><div class="stat"><label>VLESS</label><strong id="vless">—</strong></div><div class="stat"><label>SOCKS5</label><strong id="socks">—</strong></div></section>
 <h2 class="section-title">Подписки для приложений</h2>
 <section class="subs">
-<article class="sub panel" style="grid-column:1/-1"><div class="sub-head"><div class="sub-icon">⌁</div><h3>Единая динамическая подписка · HAPP / Hiddify</h3></div><p>Одна HTTPS-ссылка для HAPP и Hiddify. Первый узел — ⚡ Автоподбор (самый быстрый), далее выбранное число конфигураций по убыванию скорости. Ссылка не меняется.</p><div class="url" id="subscription-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="subscription-url">Скопировать единую ссылку</button><a class="btn" href="./sub/all.txt" target="_blank" rel="noopener">Открыть текущий список</a></div></article>
+<article class="sub panel" style="grid-column:1/-1"><div class="sub-head"><div class="sub-icon">⌁</div><h3>Единая динамическая подписка · HAPP / Hiddify</h3></div><p>Статические ссылки для HAPP и Hiddify. Первый узел — ⚡ Автоподбор (самый быстрый), далее выбранное количество проверенных конфигураций.</p><div class="url" id="subscription-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="subscription-url">Скопировать ссылку</button><a class="btn" id="open-subscription" href="./sub/all.txt" target="_blank" rel="noopener">Открыть список</a></div></article>
 </section>
 <div class="list-head"><h2 class="section-title" style="margin:0">Проверенные узлы</h2><span class="count" id="visible-count">Загрузка…</span></div>
 <div class="toolbar"><label for="subscription-limit" class="foot" style="align-self:center">Дополнительно к автоподбору:</label><select id="subscription-limit" class="select"><option value="all">Все рабочие</option><option value="0">Только автоподбор</option><option value="10">10 конфигураций</option><option value="25">25 конфигураций</option><option value="50">50 конфигураций</option><option value="100">100 конфигураций</option><option value="200">200 конфигураций</option><option value="500">500 конфигураций</option></select></div>
@@ -39,31 +39,32 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <script>
 (() => {
  const $ = id => document.getElementById(id);
- const $savedWorker = localStorage.getItem('scaner-worker-url') || '';
- $('worker-url').value = $savedWorker; $('upload-token').value = '';
+ const GITHUB_CLIENT_ID = 'Ov23liQBvZ6j1tpibyaW';
+ const UPLOAD_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0SRXwL2hJWw8LTVdflP9
+rd867ijvDyg4IRX0fc3AAN9NC9UZL2wPU0+7ZSzrSon5+wR3CfOsLp9UGnzo1Ks+
+ZPJkWE2aDSs80WpNgzD5Ca7dqOLvVnRQa+KCT9zxWc9LdY3ksyNwZ3n7wFfskLdW
+Uy9L4e3+vn+tGGexZJ4ddoffTF2oz+XLhQZTrjTYBp3o8HKoq87R54GMCWn48tbQ
+vUaYFgPT2Y6A5gRxkbo+AjkBNHyU2PW4uavJsh+gD1UFbKtD9YeXVxdZKxsJxd+3
+/JlflR8UBWqiGQLACHsDso8+U8DWz9MGEgvft+9EAHnb/YgWwGQ+4cDX7XiUBDXl
+4kTlCBwJThtGO+xTZnKXVcR3OnTBOUf3m0muNYXI+QbD1pKZnqvmSL13rdRcT4o3
+U5IFvLE1CKuORQoDqlU13SF9cI5XK8q1/e7R3lvkVWwFO0cs/gj9UTTThCHcMzw/
+gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
+-----END PUBLIC KEY-----`;
+ let githubToken = null;
  const defaultSubscription = new URL('sub/all.txt', new URL('.', window.location.href)).href;
  function updateSubscription() {
-  const worker = $('worker-url').value.trim().replace(/\/$/,'');
   const limit = $('subscription-limit').value;
-  const subscription = worker ? worker + '/subscription?limit=' + encodeURIComponent(limit) : defaultSubscription;
-  $('subscription-url').textContent = subscription;
-  const copyButton = document.querySelector('[data-copy-url="subscription-url"]');
-  copyButton.disabled = !worker && limit !== 'all';
-  $('subscription-hint').textContent = worker
-   ? 'Лимит применяется сервером. ⚡ Автоподбор всегда включён первым; выбранное число узлов добавляется после него.'
-   : (limit === 'all'
-      ? 'Сейчас используется статическая ссылка со всеми проверенными узлами. Для выбора точного количества укажи URL API Worker.'
-      : 'Выбранное количество пока не применяется: укажи URL API Worker. Копирование этой ссылки отключено, чтобы не выдать полный список вместо выбранного лимита.');
+  const path = limit === 'all' ? 'sub/all.txt' : 'sub/all-' + limit + '.txt';
+  const url = new URL(path, new URL('.', window.location.href)).href;
+  $('subscription-url').textContent = url;
+  $('open-subscription').href = url;
+  $('subscription-hint').textContent = limit === 'all'
+   ? 'В подписке все рабочие узлы. ⚡ Автоподбор всегда первый.'
+   : 'В подписке: ⚡ Автоподбор + до ' + limit + ' следующих узлов. Если узлов меньше, будут включены все доступные.';
  }
  updateSubscription();
- $('subscription-limit').addEventListener('change', updateSubscription);
- $('worker-url').addEventListener('input', updateSubscription);
- $('worker-url').addEventListener('change', () => { localStorage.setItem('scaner-worker-url',$('worker-url').value.trim()); updateSubscription(); });
- $('upload-file').addEventListener('change', () => {
-  const file=$('upload-file').files[0];
-  if(file) $('upload-status').textContent='Выбран файл: '+file.name+' · '+(file.size/1024).toFixed(1)+' КБ. После отправки он будет проверен.';
- });
- let nodes = [];
+ $('subscription-limit').addEventListener('change', updateSubscription); let nodes = [];
  async function copyText(value, button) {
   const old = button.textContent;
   try { await navigator.clipboard.writeText(value); }
@@ -108,23 +109,70 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
   } finally {$('reload').disabled=false;$('reload').textContent='Обновить';}
  }
  document.querySelectorAll('[data-copy-url]').forEach(button=>button.addEventListener('click',()=>copyText($(button.dataset.copyUrl).textContent,button)));
+ async function githubDeviceLogin(status) {
+  status.textContent='Подключаем GitHub…';
+  const params=new URLSearchParams({client_id:GITHUB_CLIENT_ID,scope:'public_repo'});
+  const deviceResponse=await fetch('https://github.com/login/device/code',{method:'POST',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:params});
+  if(!deviceResponse.ok)throw new Error('GitHub Device Flow недоступен (HTTP '+deviceResponse.status+'). Проверь, включён ли Device Flow в настройках OAuth App.');
+  const device=await deviceResponse.json();
+  if(!device.device_code||!device.user_code)throw new Error(device.error_description||'GitHub не выдал код авторизации.');
+  status.textContent='Открой '+device.verification_uri+' и введи код '+device.user_code+'. Ожидаем подтверждение…';
+  const interval=Math.max(5,Number(device.interval)||5)*1000;
+  const deadline=Date.now()+15*60*1000;
+  while(Date.now()<deadline){
+   await new Promise(resolve=>setTimeout(resolve,interval));
+   const tokenResponse=await fetch('https://github.com/login/oauth/access_token',{method:'POST',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:GITHUB_CLIENT_ID,device_code:device.device_code,grant_type:'urn:ietf:params:oauth:grant-type:device_code'})});
+   const result=await tokenResponse.json();
+   if(result.access_token){githubToken=result.access_token;return;}
+   if(result.error==='slow_down'){await new Promise(resolve=>setTimeout(resolve,5000));continue;}
+   if(result.error==='expired_token'||result.error==='access_denied')throw new Error(result.error_description||'Авторизация отменена или истекла.');
+   if(result.error!=='authorization_pending')throw new Error(result.error_description||result.error||'Ошибка авторизации GitHub.');
+  }
+  throw new Error('Время ожидания GitHub-авторизации истекло. Повтори отправку.');
+ }
+ function bytesToBase64(bytes){let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary);}
+ async function encryptUpload(parsed){
+  const aesKey=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt']);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const clear=new TextEncoder().encode(JSON.stringify(parsed));
+  const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},aesKey,clear));
+  const rawKey=await crypto.subtle.exportKey('raw',aesKey);
+  const publicKey=await crypto.subtle.importKey('spki',Uint8Array.from(atob(UPLOAD_PUBLIC_KEY.replace(/-----[^-]+-----/g,'').replace(/\\s/g,'')),c=>c.charCodeAt(0)),{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+  const wrappedKey=new Uint8Array(await crypto.subtle.encrypt({name:'RSA-OAEP'},publicKey,rawKey));
+  return {encrypted:true,algorithm:'AES-256-GCM+RSA-OAEP-256',iv:bytesToBase64(iv),ciphertext:bytesToBase64(ciphertext),wrappedKey:bytesToBase64(wrappedKey)};
+ }
+ async function saveToRepository(envelope){
+  const api='https://api.github.com/repos/kinderDmitry/Scaner-proxy/contents/incoming/upload.json';
+  const headers={'Authorization':'Bearer '+githubToken,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'};
+  let sha=null;
+  const existing=await fetch(api,{headers});
+  if(existing.ok){const data=await existing.json();sha=data.sha;}
+  else if(existing.status!==404){throw new Error('Не удалось проверить файл в репозитории (HTTP '+existing.status+').');}
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(envelope,null,2)+'\\n')));
+  const body={message:'Upload encrypted proxy catalog JSON from website',content,branch:'main'};
+  if(sha)body.sha=sha;
+  const response=await fetch(api,{method:'PUT',headers,body:JSON.stringify(body)});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.message||('GitHub API HTTP '+response.status));
+  return result;
+ }
  $('upload').addEventListener('click', async () => {
-  const file=$('upload-file').files[0], worker=$('worker-url').value.trim().replace(/\/$/,'');
-  const token=$('upload-token').value.trim(), status=$('upload-status');
-  if(!file||!worker||!token){status.textContent='Выбери JSON, укажи API-адрес и ключ загрузки.';return;}
+  const file=$('upload-file').files[0], status=$('upload-status');
+  if(!file){status.textContent='Сначала выбери JSON-файл из приложения.';return;}
   if(file.size>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ.';return;}
-  $('upload').disabled=true;status.textContent='Отправка JSON…';
+  $('upload').disabled=true;
   try {
    const parsed=JSON.parse(await file.text());
    const configs=Array.isArray(parsed)?parsed:parsed?.configs;
-   if(!Array.isArray(configs)||configs.length<1) throw new Error('В JSON не найден массив configs с конфигурациями.');
-   if(configs.length>1000) throw new Error('В одном файле допускается не более 1000 конфигураций.');
-   const response=await fetch(worker+'/upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(parsed)});
-   const result=await response.json().catch(()=>({}));
-   if(!response.ok)throw new Error(result.error||('HTTP '+response.status));
-   localStorage.setItem('scaner-worker-url',worker);
-   status.textContent='Принято: '+(result.accepted??configs.length)+' конфигураций. Файл сохранён; GitHub Actions запустит проверку и опубликует результат после её успешного завершения.';
-  } catch(error){status.textContent='Ошибка загрузки: '+error.message;}
+   if(!Array.isArray(configs)||configs.length<1)throw new Error('В JSON не найден массив configs с конфигурациями.');
+   if(configs.length>1000)throw new Error('В одном файле допускается не более 1000 конфигураций.');
+   if(!githubToken)await githubDeviceLogin(status);
+   status.textContent='Шифруем файл в браузере…';
+   const envelope=await encryptUpload(parsed);
+   status.textContent='Сохраняем зашифрованный файл в main…';
+   await saveToRepository(envelope);
+   status.textContent='Готово: '+configs.length+' конфигураций сохранено в репозитории. GitHub Actions автоматически запустит проверку; в каталог попадут только прошедшие HTTPS-тест.';
+  }catch(error){status.textContent='Ошибка загрузки: '+error.message;}
   finally{$('upload').disabled=false;}
  });
  $('search').addEventListener('input',render);$('protocol').addEventListener('change',render);$('reload').addEventListener('click',load);load();

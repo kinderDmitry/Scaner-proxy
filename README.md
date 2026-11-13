@@ -1,30 +1,33 @@
 # Scaner Proxy X — online catalog
 
-Static Black Neon web interface deployed to GitHub Pages. GitHub Actions starts a catalog verification run every five minutes. GitHub may delay scheduled starts; each run must finish successfully before the published data changes.
+Static website hosted on GitHub Pages. Uploads are committed directly to the repository through GitHub OAuth Device Flow; no Cloudflare Worker or separate upload server is used.
 
-## Verification
+## Upload flow
 
-- The active catalog input is JSON explicitly uploaded through the website. The current build does not automatically collect the URLs listed in `sources.json`.
-- Only VLESS and SOCKS5 links are accepted from the uploaded JSON, matching the protocols targeted by this app.
+1. Select the JSON exported by the Android app.
+2. Press **Авторизоваться и отправить JSON**.
+3. GitHub displays a one-time code. Open the verification URL, sign in and approve access to the public repository.
+4. The browser encrypts the JSON with AES-256-GCM and wraps the AES key with the repository's RSA public key. Only the encrypted envelope is committed to `incoming/upload.json`.
+5. GitHub Actions decrypts it using the private key stored in the repository's Actions secret, checks each supported VLESS/SOCKS5 tunnel with sing-box, and publishes only verified entries.
+
+The OAuth access token is kept in page memory only and is not written to localStorage. Reloading the page requires a new GitHub Device Flow authorization. The OAuth app must have **Enable Device Flow** enabled and its Client ID configured in the website.
+
+## One-time repository setup
+
+In **Settings → Secrets and variables → Actions**, create this repository secret:
+
+- `UPLOAD_PRIVATE_KEY_PEM` — the RSA private key matching the public key embedded in `website/index.html`.
+
+Never commit the private key to the repository or paste it into the website. Without this secret, the upload can be stored but the verification workflow cannot decrypt it.
+
+## Verification and subscriptions
+
+- GitHub Actions checks the catalog on a five-minute schedule. GitHub may delay scheduled starts; it is not an exact five-minute SLA.
+- Only VLESS and SOCKS5 links are accepted.
 - Hosts resolving to private, loopback, link-local, multicast, or otherwise non-global addresses are rejected.
-- Every published candidate must pass an actual HTTPS 204 request through a local sing-box inbound and the candidate proxy outbound.
-- No arbitrary IP/port scanning, credential guessing, or password brute force is performed.
-- If no candidates arrive or none pass, the workflow fails and preserves the previous published catalog.
-
-## Subscription endpoints
-
-After the first successful Pages deployment:
-
-- https://kinderdmitry.github.io/Scaner-proxy/sub/all.txt
-- https://kinderdmitry.github.io/Scaner-proxy/sub/all.base64
-- https://kinderdmitry.github.io/Scaner-proxy/sub/vless.txt
-- https://kinderdmitry.github.io/Scaner-proxy/sub/socks5.txt
-
-The plain-text URI list is intended for Happ and Hiddify. The profile requests an update every six hours; the public catalog itself is rechecked by GitHub Actions on a five-minute schedule. The dynamic node limit requires the Cloudflare Worker URL in the website. Without it, the static link returns the full list.
-
-## Upload API
-
-The upload form requires a deployed Cloudflare Worker URL and the upload key configured by the service administrator. The Worker stores uploaded configuration data encrypted in the repository; the catalog workflow then verifies supported VLESS/SOCKS entries and republishes the site. Worker deployment is a separate manual workflow and requires the documented Cloudflare/GitHub secrets.
+- Every published candidate must pass a real HTTPS 204 request through a local sing-box inbound and the candidate proxy outbound.
+- The fastest verified node is always first and labeled **⚡ Автоподбор**. Other nodes are labeled by geolocated country and city.
+- GitHub Pages is static and cannot process a dynamic `?limit=` parameter. The site therefore publishes fixed subscription variants: all nodes, or Auto Pick plus 0/10/25/50/100/200/500 additional nodes.
 
 ## Local tests
 
