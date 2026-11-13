@@ -236,6 +236,12 @@ def check_services(local_port: int) -> dict[str, dict[str, Any]]:
     return results
 
 
+
+def with_location_label(uri: str, label: str) -> str:
+    parts = urllib.parse.urlsplit(uri)
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, urllib.parse.quote(label, safe="")))
+
+
 def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None:
     if not is_public_host(item["host"]):
         return None
@@ -281,6 +287,7 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
                 if speed.returncode == 0 and len(speed_parts) == 2 and speed_parts[0] == "200":
                     speed_mbps = round(float(speed_parts[1]) * 8 / 1_000_000, 2)
                 item.update(lookup_geo(item["host"]))
+                item["uri"] = with_location_label(item["uri"], item["name"])
                 item["latencyMs"] = latency_ms
                 item["speedMbps"] = speed_mbps
                 item["services"] = check_services(local_port)

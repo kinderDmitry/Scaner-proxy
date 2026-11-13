@@ -38,7 +38,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/health" && request.method === "GET") return json({ ok: true, service: "Scaner Proxy X upload" });
     if (url.pathname === "/subscription" && request.method === "GET") {
-      const raw = await fetch("https://raw.githubusercontent.com/" + REPO + "/main/website/sub/all.txt", { cf: { cacheTtl: 0 } });
+      const raw = await fetch("https://kinderdmitry.github.io/Scaner-proxy/sub/all.txt", { cf: { cacheTtl: 0 } });
       if (!raw.ok) return json({ error: "Каталог пока не опубликован" }, 503);
       const lines = (await raw.text()).split(/\r?\n/);
       const headers = lines.filter(line => !line.trim() || line.trim().startsWith("#"));

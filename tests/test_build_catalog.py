@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import patch
 
@@ -83,6 +84,11 @@ class FeedParsingTests(unittest.TestCase):
 
 
 class GeoTests(unittest.TestCase):
+    def test_subscription_name_replaces_feed_label_with_location_only(self):
+        uri = "vless://uuid@example.com:443?security=tls#old-feed-name"
+        renamed = mod.with_location_label(uri, "🇩🇪 Германия · Франкфурт")
+        self.assertEqual(urllib.parse.unquote(renamed.rsplit("#", 1)[1]), "🇩🇪 Германия · Франкфурт")
+
     def test_country_flag(self):
         self.assertEqual(mod.country_flag("DE"), "🇩🇪")
         self.assertEqual(mod.country_flag(""), "❗")
