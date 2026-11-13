@@ -354,28 +354,33 @@ def subscription_lines(nodes: list[dict[str, Any]]) -> list[str]:
 def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None:
     sub = site_dir / "sub"
     sub.mkdir(parents=True, exist_ok=True)
+    nl = chr(10)
     verified = sorted(verified, key=lambda x: (-float(x.get("speedMbps") or 0), int(x.get("latencyMs") or 2147483647), x["host"]))
     groups = {"all": verified, "vless": [x for x in verified if x["protocol"] == "VLESS"],
               "socks5": [x for x in verified if x["protocol"] == "SOCKS5"]}
     for key, nodes in groups.items():
         lines = subscription_lines(nodes) if key == "all" else [x["uri"] for x in nodes]
-        body = "#profile-title: Scaner Proxy X\n#profile-update-interval: 6\n# Scaner Proxy X — проверено через HTTPS-туннель\n" + "\n".join(lines)
-        if lines: body += "\n"
+        body = nl.join(["#profile-title: Scaner Proxy X", "#profile-update-interval: 6",
+                        "# Scaner Proxy X — проверено через HTTPS-туннель"] + lines)
+        if lines:
+            body += nl
         (sub / (key + ".txt")).write_text(body, encoding="utf-8")
-        (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\n", encoding="ascii")
+        (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + nl, encoding="ascii")
     # Static Pages cannot apply a query-string limit. Publish fixed-size variants instead.
     all_lines = subscription_lines(verified)
     for limit in (0, 10, 25, 50, 100, 200, 500):
         selected = all_lines[:1 + limit] if all_lines else []
-        body = "#profile-title: Scaner Proxy X\n#profile-update-interval: 6\n# Scaner Proxy X — проверено через HTTPS-туннель\n" + "\n".join(selected)
-        if selected: body += "\n"
+        body = nl.join(["#profile-title: Scaner Proxy X", "#profile-update-interval: 6",
+                        "# Scaner Proxy X — проверено через HTTPS-туннель"] + selected)
+        if selected:
+            body += nl
         (sub / ("all-" + str(limit) + ".txt")).write_text(body, encoding="utf-8")
-        (sub / ("all-" + str(limit) + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\n", encoding="ascii")
+        (sub / ("all-" + str(limit) + ".base64")).write_text(base64.b64encode(body.encode()).decode() + nl, encoding="ascii")
     payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
         "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
         "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps", "services")} for x in verified]}
-    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + nl, encoding="utf-8")
 
 
 
