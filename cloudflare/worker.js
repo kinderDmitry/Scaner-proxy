@@ -40,16 +40,16 @@ export default {
     if (url.pathname === "/subscription" && request.method === "GET") {
       const raw = await fetch("https://raw.githubusercontent.com/" + REPO + "/main/website/sub/all.txt", { cf: { cacheTtl: 0 } });
       if (!raw.ok) return json({ error: "Каталог пока не опубликован" }, 503);
-      const lines = (await raw.text()).split(/\\r?\\n/);
+      const lines = (await raw.text()).split(/\r?\n/);
       const headers = lines.filter(line => !line.trim() || line.trim().startsWith("#"));
-      const nodes = lines.filter(line => /^(vless|socks5?):\\/\\//i.test(line.trim()));
+      const nodes = lines.filter(line => /^(vless|socks5?):\/\//i.test(line.trim()));
       const requested = url.searchParams.get("limit") || "all";
       const limit = requested === "all" ? nodes.length : Math.max(1, Math.min(5000, Number.parseInt(requested, 10) || 100));
-      const body = [...headers, ...nodes.slice(0, limit)].join("\\n").trimEnd() + "\\n";
+      const body = [...headers, ...nodes.slice(0, limit)].join("\n").trimEnd() + "\n";
       return new Response(body, { status: 200, headers: { ...cors, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "Profile-Update-Interval": "6" } });
     }
     if (url.pathname !== "/upload" || request.method !== "POST") return json({ error: "Not found" }, 404);
-    const supplied = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "");
+    const supplied = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
     if (!env.UPLOAD_TOKEN || !safeEqual(supplied, env.UPLOAD_TOKEN)) return json({ error: "Unauthorized" }, 401);
     const length = Number(request.headers.get("Content-Length") || 0);
     if (length > MAX_BYTES) return json({ error: "JSON exceeds 2 MB limit" }, 413);
@@ -62,12 +62,12 @@ export default {
     const normalized = [];
     for (const item of configs) {
       const value = typeof item === "string" ? item : item && (item.uri || item.rawConfig || item.config);
-      if (typeof value !== "string" || !/^(vless|socks5?):\\/\\//i.test(value.trim())) continue;
+      if (typeof value !== "string" || !/^(vless|socks5?):\/\//i.test(value.trim())) continue;
       normalized.push(value.trim());
     }
     if (!normalized.length) return json({ error: "No supported VLESS/SOCKS configurations found" }, 400);
     if (!env.GITHUB_TOKEN) return json({ error: "Server is not configured: GITHUB_TOKEN missing" }, 503);
-    const document = JSON.stringify({ uploadedAt: new Date().toISOString(), configs: [...new Set(normalized)] }, null, 2) + "\\n";
+    const document = JSON.stringify({ uploadedAt: new Date().toISOString(), configs: [...new Set(normalized)] }, null, 2) + "\n";
     const existing = await githubRequest(TARGET + "?ref=main", env.GITHUB_TOKEN);
     let sha;
     if (existing.ok) sha = (await existing.json()).sha;
@@ -77,7 +77,14 @@ export default {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "catalog: accept uploaded proxy JSON",
-        content: btoa(String.fromCharCode(...new TextEncoder().encode(document))),
+        content: (() => {
+          const bytes = new TextEncoder().encode(document);
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+            binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+          }
+          return btoa(binary);
+        })(),
         branch: "main",
         ...(sha ? { sha } : {})
       })

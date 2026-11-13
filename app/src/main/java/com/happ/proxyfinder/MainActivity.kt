@@ -191,7 +191,7 @@ class MainActivity : ComponentActivity() {
             hint = "Ключ загрузки"
             singleLine = true
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(preferences.getString("site_upload_token", ""))
+            setText("")
         }
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -210,7 +210,7 @@ class MainActivity : ComponentActivity() {
                     Toast.makeText(this, "Укажи HTTPS-адрес API и ключ загрузки", Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
-                preferences.edit().putString("site_upload_url", baseUrl).putString("site_upload_token", secret).apply()
+                preferences.edit().putString("site_upload_url", baseUrl).apply()
                 lifecycleScope.launch {
                     try {
                         val response = withContext(Dispatchers.IO) {
