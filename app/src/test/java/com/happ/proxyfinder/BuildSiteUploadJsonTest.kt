@@ -49,6 +49,17 @@ class BuildSiteUploadJsonTest {
     }
 
     @Test
+    fun rejectsCatalogLargerThanWebsiteLimitInsteadOfSilentlyTruncating() {
+        val items = (1..1001).map { index ->
+            verified("node-$index", rawConfig = "socks5://proxy$index.example:1080")
+        }
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            buildSiteUploadJson(items)
+        }
+        assertEquals(true, error.message?.contains("не более 1000"))
+    }
+
+    @Test
     fun rejectsEmptyVerifiedCatalogInsteadOfCreatingAnEmptyUpload() {
         assertThrows(IllegalArgumentException::class.java) {
             buildSiteUploadJson(emptyList())
