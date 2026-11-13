@@ -318,7 +318,7 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
     payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
         "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
-        "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps")} for x in verified]}
+        "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps", "services")} for x in verified]}
     (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 

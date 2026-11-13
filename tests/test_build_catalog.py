@@ -136,7 +136,8 @@ class OutputTests(unittest.TestCase):
             site = Path(temp)
             good = {"uri": "socks://proxy.example:1080", "protocol": "SOCKS5", "host": "proxy.example",
                     "port": 1080, "name": "good", "checkedAt": "2026-01-01T00:00:00+00:00",
-                    "test": "HTTPS 204 через туннель", "verified": True}
+                    "test": "HTTPS 204 через туннель", "verified": True,
+                    "services": {"YouTube": {"ok": True, "status": 204}, "Instagram": {"ok": False, "status": 403}}}
             mod.write_outputs([good], site)
             text = (site / "sub" / "all.txt").read_text()
             self.assertIn(good["uri"], text)
@@ -144,6 +145,8 @@ class OutputTests(unittest.TestCase):
             data = json.loads((site / "data.json").read_text())
             self.assertEqual(data["total"], 1)
             self.assertEqual(data["protocols"]["SOCKS5"], 1)
+            self.assertEqual(data["nodes"][0]["services"]["YouTube"]["ok"], True)
+            self.assertIn("Instagram", data["nodes"][0]["services"])
 
     def test_no_uploaded_json_keeps_previous_catalog_without_failing(self):
         with tempfile.TemporaryDirectory() as temp:

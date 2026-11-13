@@ -341,7 +341,7 @@ class MainActivity : ComponentActivity() {
                             pendingHiddifyExport = items
                             jsonFileLauncher.launch("hiddify-singbox-filtered-${System.currentTimeMillis()}.json")
                         },
-                        onUploadToSite = { items -> promptSiteUpload(items) }
+                        onUploadToSite = { _ -> promptSiteUpload(allItems) }
                     )
                 }
             }
@@ -1137,7 +1137,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                     OutlinedButton(onClick = { onUploadToSite(exportItems) }, enabled = exportItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.CloudUpload, null, tint = Green)
                         Spacer(Modifier.width(8.dp))
-                        Text("Выгрузить рабочие конфигурации на сайт", color = Green)
+                        Text("Выгрузить полный каталог на сайт", color = Green)
                     }
                     }
                 }
