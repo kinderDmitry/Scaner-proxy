@@ -24,8 +24,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="stats" aria-label="Статистика"><div class="stat"><label>Рабочих конфигураций</label><strong class="cyan" id="total">—</strong></div><div class="stat"><label>VLESS</label><strong id="vless">—</strong></div><div class="stat"><label>SOCKS5</label><strong id="socks">—</strong></div></section>
 <h2 class="section-title">Подписки для приложений</h2>
 <section class="subs">
-<article class="sub panel"><div class="sub-head"><div class="sub-icon">H</div><h3>Happ · Автообновление</h3></div><p>Вставь HTTPS-ссылку в Happ как обычную подписку. Обновление — каждые 5 минут.</p><div class="url" id="happ-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="happ-url">Скопировать ссылку</button><a class="btn" href="./sub/all.txt" target="_blank" rel="noopener">Открыть список</a></div></article>
-<article class="sub panel"><div class="sub-head"><div class="sub-icon">◈</div><h3>Hiddify · Автообновление</h3></div><p>Добавь профиль по HTTPS URL. Только проверенные VLESS и SOCKS5.</p><div class="url" id="hiddify-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="hiddify-url">Скопировать ссылку</button><a class="btn" href="./sub/all.base64" target="_blank" rel="noopener">Base64</a></div></article>
+<article class="sub panel" style="grid-column:1/-1"><div class="sub-head"><div class="sub-icon">⌁</div><h3>Единая динамическая подписка · HAPP / Hiddify</h3></div><p>Одна HTTPS-ссылка для обоих приложений. Содержимое и количество узлов обновляются автоматически после проверки каталога.</p><div class="url" id="subscription-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="subscription-url">Скопировать единую ссылку</button><a class="btn" href="./sub/all.txt" target="_blank" rel="noopener">Открыть текущий список</a></div></article>
 </section>
 <div class="list-head"><h2 class="section-title" style="margin:0">Проверенные узлы</h2><span class="count" id="visible-count">Загрузка…</span></div>
 <div class="toolbar"><label for="subscription-limit" class="foot" style="align-self:center">В подписке:</label><select id="subscription-limit" class="select"><option value="all">Все рабочие</option><option value="10">Топ 10</option><option value="25">Топ 25</option><option value="50">Топ 50</option><option value="100">Топ 100</option><option value="200">Топ 200</option><option value="500">Топ 500</option></select></div>
@@ -45,7 +44,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
   const worker = $('worker-url').value.trim().replace(/\\/$/,'');
   const limit = $('subscription-limit').value;
   const subscription = worker ? worker + '/subscription?limit=' + encodeURIComponent(limit) : defaultSubscription;
-  $('happ-url').textContent = subscription; $('hiddify-url').textContent = subscription;
+  $('subscription-url').textContent = subscription;
  }
  updateSubscription();
  $('subscription-limit').addEventListener('change', updateSubscription);
