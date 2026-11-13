@@ -12,7 +12,9 @@ android {
         applicationId = "com.happ.proxyfinder"
         minSdk = 24
         targetSdk = 35
-        versionCode = 16
+        // CI supplies a strictly increasing build number so Android accepts
+        // each APK as an in-place update of the previously installed version.
+        versionCode = providers.gradleProperty("appVersionCode").orElse("16").get().toInt()
         versionName = "1.10.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
