@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
         }
         val token = EditText(this).apply {
             hint = "Ключ загрузки"
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText("")
         }
@@ -944,7 +944,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             onValueChange = { targetPorts = it },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("TCP-порты через запятую (до 8)") },
-                            singleLine = true,
+                            setSingleLine(true),
                             enabled = !loading,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AccentCyan, focusedLabelColor = AccentCyan,
