@@ -1,0 +1,7 @@
+{
+  "sources": [
+    {"name":"Morpheus V2Ray Config","url":"https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt"},
+    {"name":"Nexus Nodes verified feed","url":"https://raw.githubusercontent.com/ninjastrikers/Nexus-nodes/main/configs/vless.txt"},
+    {"name":"sNSub live-tested feed","url":"https://raw.githubusercontent.com/3000S-HTTP/sNSub/main/output/configs_vless_vmess_base64.txt"}
+  ]
+}
