@@ -72,7 +72,7 @@ class ProxyItemTest {
         assertEquals(2, profiles.length())
 
         val socksProfile = profiles.getJSONObject(0)
-        assertEquals("🏳️ Геолокация не определена", socksProfile.getString("remarks"))
+        assertEquals("❗ Геолокация не определена", socksProfile.getString("remarks"))
         val socksOutbound = socksProfile.getJSONArray("outbounds").getJSONObject(0)
         assertEquals("socks", socksOutbound.getString("protocol"))
         val socksServer = socksOutbound.getJSONObject("settings").getJSONArray("servers").getJSONObject(0)
@@ -487,11 +487,11 @@ class ProxyItemTest {
     }
 
     @Test
-    fun happExportDoesNotRewriteSocks4OrOtherProtocols() {
+    fun happExportPreservesSocks4AndAddsLocationLabelToVless() {
         val socks4 = ProxyItem("s4", "192.0.2.1", 1080, "SOCKS4", "test", "socks4://192.0.2.1:1080", country = "Germany", countryCode = "DE")
         val vless = ProxyItem("v", "example.com", 443, "VLESS", "test", "vless://id@example.com:443", country = "Germany", countryCode = "DE")
         assertEquals("socks4://192.0.2.1:1080", namedConfigForImport(socks4))
-        assertEquals("vless://id@example.com:443", namedConfigForImport(vless))
+        assertEquals("vless://id@example.com:443#%F0%9F%87%A9%F0%9F%87%AA%20Germany", namedConfigForImport(vless))
     }
 
 
