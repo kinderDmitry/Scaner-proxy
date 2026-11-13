@@ -39,8 +39,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 (() => {
  const $ = id => document.getElementById(id);
  const $savedWorker = localStorage.getItem('scaner-worker-url') || '';
- const $savedToken = localStorage.getItem('scaner-upload-token') || '';
- $('worker-url').value = $savedWorker; $('upload-token').value = $savedToken;
+ $('worker-url').value = $savedWorker; $('upload-token').value = '';
  const defaultSubscription = new URL('sub/all.txt', new URL('.', window.location.href)).href;
  function updateSubscription() {
   const worker = $('worker-url').value.trim().replace(/\\/$/,'');
@@ -103,7 +102,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
    const response=await fetch(worker+'/upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(parsed)});
    const result=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(result.error||('HTTP '+response.status));
-   localStorage.setItem('scaner-worker-url',worker);localStorage.setItem('scaner-upload-token',token);
+   localStorage.setItem('scaner-worker-url',worker);
    status.textContent='JSON принят. Каталог будет обновлён после проверки конфигураций.';
   } catch(error){status.textContent='Ошибка загрузки: '+error.message;}
   finally{$('upload').disabled=false;}

@@ -103,6 +103,20 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(data["total"], 1)
             self.assertEqual(data["protocols"]["SOCKS5"], 1)
 
+    def test_no_uploaded_json_keeps_previous_catalog_without_failing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sources = root / "sources.json"
+            sources.write_text('{"sources":[]}', encoding="utf-8")
+            site = root / "site"
+            site.mkdir()
+            current = site / "data.json"
+            current.write_text("previous-catalog", encoding="utf-8")
+            with patch.object(mod, "fetch_uploaded", return_value=[]):
+                result = mod.build(sources, "missing-sing-box", site)
+            self.assertEqual(result, {"candidates": 0, "verified": 0})
+            self.assertEqual(current.read_text(encoding="utf-8"), "previous-catalog")
+
     def test_empty_run_preserves_existing_catalog(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

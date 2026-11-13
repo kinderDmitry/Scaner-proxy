@@ -296,7 +296,8 @@ def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int 
             break
     items = list(candidates.values())
     if not items:
-        raise RuntimeError("No supported candidates; previous published catalog was preserved")
+        print("No uploaded JSON yet; existing published catalog was preserved")
+        return {"candidates": 0, "verified": 0}
     verified = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(test_candidate, item, sing_box) for item in items]
