@@ -1,0 +1,42 @@
+name: Deploy upload API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Configure Worker secrets
+        working-directory: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SCANER_UPLOAD_TOKEN: ${{ secrets.SCANER_UPLOAD_TOKEN }}
+          WORKER_GITHUB_TOKEN: ${{ secrets.WORKER_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$SCANER_UPLOAD_TOKEN"
+          test -n "$WORKER_GITHUB_TOKEN"
+          printf '%s' "$SCANER_UPLOAD_TOKEN" | wrangler secret put UPLOAD_TOKEN --config wrangler.toml
+          printf '%s' "$WORKER_GITHUB_TOKEN" | wrangler secret put GITHUB_TOKEN --config wrangler.toml
+          wrangler deploy --config wrangler.toml
