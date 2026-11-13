@@ -944,7 +944,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                             onValueChange = { targetPorts = it },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("TCP-порты через запятую (до 8)") },
-                            setSingleLine(true),
+                            singleLine = true,
                             enabled = !loading,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AccentCyan, focusedLabelColor = AccentCyan,
