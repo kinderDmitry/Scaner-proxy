@@ -115,6 +115,18 @@ def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> lis
     if not config_path.exists():
         return []
     payload = json.loads(config_path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict) and payload.get("encrypted") is True:
+        key_hex = os.environ.get("UPLOAD_ENCRYPTION_KEY", "")
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", key_hex):
+            raise RuntimeError("UPLOAD_ENCRYPTION_KEY is required to decrypt uploaded JSON")
+        try:
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            iv = base64.b64decode(payload["iv"], validate=True)
+            ciphertext = base64.b64decode(payload["ciphertext"], validate=True)
+            decrypted = AESGCM(bytes.fromhex(key_hex)).decrypt(iv, ciphertext, None)
+            payload = json.loads(decrypted.decode("utf-8"))
+        except Exception as exc:
+            raise ValueError("Uploaded JSON could not be decrypted or validated") from exc
     values = payload.get("configs", []) if isinstance(payload, dict) else payload
     if not isinstance(values, list):
         raise ValueError("Uploaded JSON must contain a configs array")

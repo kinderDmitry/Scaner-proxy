@@ -10,6 +10,7 @@ The repository includes a manual GitHub Actions deployment workflow. Add these r
 - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID.
 - `SCANER_UPLOAD_TOKEN`: a long random token used by the app and website.
 - `WORKER_GITHUB_TOKEN`: fine-grained GitHub token with Contents: Read and write for this repository.
+- `UPLOAD_ENCRYPTION_KEY`: 32 random bytes encoded as 64 hexadecimal characters. Use the same value in GitHub Actions and Worker.
 
 Then run **Actions → Deploy upload API → Run workflow**. The workflow deploys the Worker and prints its `workers.dev` URL. Enter that URL and the upload token in the Android app and website.
 
@@ -30,4 +31,4 @@ The subscription endpoint returns the fastest entries first from the current pub
 
 ## Security note
 
-Uploaded proxy URIs contain credentials/UUIDs. This repository currently publishes the working subscription, so imported entries stored under `incoming/upload.json` are also visible in repository history. Upload only configurations you intend to publish. Do not upload personal or otherwise sensitive credentials.
+Uploaded proxy URIs contain credentials/UUIDs. The raw import is encrypted with AES-256-GCM before it is written to `incoming/upload.json`; only the GitHub Actions runner can decrypt it using `UPLOAD_ENCRYPTION_KEY`. The verified public subscription intentionally contains working connection credentials, so only upload nodes you intend to share with subscription users.

@@ -1,6 +1,7 @@
 import base64
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,26 @@ class FeedParsingTests(unittest.TestCase):
             self.assertEqual(len(result), 2)
             self.assertEqual(result[0][0], "App upload")
             self.assertTrue(result[1][1].startswith("socks5://"))
+
+
+    def test_decrypts_encrypted_uploaded_json(self):
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        key = bytes(range(32))
+        iv = bytes(range(12))
+        clear = json.dumps({"configs": ["socks5://proxy.example:1080"]}).encode()
+        encrypted = AESGCM(key).encrypt(iv, clear, None)
+        wrapper = {
+            "encrypted": True,
+            "algorithm": "AES-256-GCM",
+            "iv": base64.b64encode(iv).decode(),
+            "ciphertext": base64.b64encode(encrypted).decode()
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "upload.json"
+            path.write_text(json.dumps(wrapper), encoding="utf-8")
+            with patch.dict(os.environ, {"UPLOAD_ENCRYPTION_KEY": key.hex()}):
+                result = mod.fetch_uploaded(path)
+        self.assertEqual(result[0][1], "socks5://proxy.example:1080")
 
     def test_rejects_invalid_uploaded_json_shape(self):
         with tempfile.TemporaryDirectory() as temp:

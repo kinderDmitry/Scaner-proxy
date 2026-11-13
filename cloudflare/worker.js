@@ -66,8 +66,25 @@ export default {
       normalized.push(value.trim());
     }
     if (!normalized.length) return json({ error: "No supported VLESS/SOCKS configurations found" }, 400);
-    if (!env.GITHUB_TOKEN) return json({ error: "Server is not configured: GITHUB_TOKEN missing" }, 503);
+    if (!env.GITHUB_TOKEN || !env.UPLOAD_ENCRYPTION_KEY) return json({ error: "Server encryption or GitHub storage is not configured" }, 503);
     const document = JSON.stringify({ uploadedAt: new Date().toISOString(), configs: [...new Set(normalized)] }, null, 2) + "\n";
+    const keyHex = env.UPLOAD_ENCRYPTION_KEY.trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) return json({ error: "UPLOAD_ENCRYPTION_KEY must be 64 hex characters" }, 503);
+    const keyBytes = new Uint8Array(keyHex.match(/../g).map(pair => Number.parseInt(pair, 16)));
+    const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(document));
+    const toBase64 = bytes => {
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      return btoa(binary);
+    };
+    const storedDocument = JSON.stringify({
+      encrypted: true, algorithm: "AES-256-GCM",
+      iv: toBase64(iv), ciphertext: toBase64(new Uint8Array(encrypted))
+    }, null, 2) + "\n";
     const existing = await githubRequest(TARGET + "?ref=main", env.GITHUB_TOKEN);
     let sha;
     if (existing.ok) sha = (await existing.json()).sha;
@@ -78,7 +95,7 @@ export default {
       body: JSON.stringify({
         message: "catalog: accept uploaded proxy JSON",
         content: (() => {
-          const bytes = new TextEncoder().encode(document);
+          const bytes = new TextEncoder().encode(storedDocument);
           let binary = "";
           for (let offset = 0; offset < bytes.length; offset += 0x8000) {
             binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));

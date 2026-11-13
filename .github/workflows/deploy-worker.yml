@@ -31,12 +31,15 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SCANER_UPLOAD_TOKEN: ${{ secrets.SCANER_UPLOAD_TOKEN }}
           WORKER_GITHUB_TOKEN: ${{ secrets.WORKER_GITHUB_TOKEN }}
+          UPLOAD_ENCRYPTION_KEY: ${{ secrets.UPLOAD_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$SCANER_UPLOAD_TOKEN"
           test -n "$WORKER_GITHUB_TOKEN"
+          test -n "$UPLOAD_ENCRYPTION_KEY"
           printf '%s' "$SCANER_UPLOAD_TOKEN" | wrangler secret put UPLOAD_TOKEN --config wrangler.toml
           printf '%s' "$WORKER_GITHUB_TOKEN" | wrangler secret put GITHUB_TOKEN --config wrangler.toml
+          printf '%s' "$UPLOAD_ENCRYPTION_KEY" | wrangler secret put UPLOAD_ENCRYPTION_KEY --config wrangler.toml
           wrangler deploy --config wrangler.toml
