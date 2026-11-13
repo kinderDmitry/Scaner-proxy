@@ -18,7 +18,7 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="panel" style="padding:18px;margin-bottom:18px">
  <h2 class="section-title">Загрузить JSON в каталог</h2>
  <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,application/json" aria-label="JSON файл"><input id="worker-url" class="search" type="url" autocomplete="url" placeholder="URL API Worker (https://…workers.dev)" aria-label="URL API Worker"></div>
- <p class="foot" style="text-align:left;margin:0 0 10px">Выбери JSON из приложения (до 2 МБ и 1000 конфигураций). Для отправки нужен заранее развёрнутый Cloudflare Worker, его URL и ключ загрузки. Файл сохраняется в репозитории в зашифрованном виде; проверка запускается автоматически после приёма.</p>
+ <p class="foot" style="text-align:left;margin:0 0 10px">В приложении нажми «Скачать JSON для сайта» — не выбирай Hiddify/sing-box JSON. Допускается файл до 2 МБ и 1000 конфигураций. Для отправки нужен заранее развёрнутый Cloudflare Worker, его URL и ключ загрузки. Файл сохраняется в репозитории в зашифрованном виде; проверка запускается автоматически после приёма.</p>
  <div class="toolbar"><input id="upload-token" class="search" type="password" autocomplete="off" placeholder="Ключ загрузки (выдаётся администратором)"><button class="btn primary" id="upload">Отправить JSON на проверку</button></div>
  <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл, адрес API Worker и ключ загрузки.</div>
 </section>

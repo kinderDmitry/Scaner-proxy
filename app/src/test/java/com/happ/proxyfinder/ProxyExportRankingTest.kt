@@ -67,6 +67,21 @@ class ProxyExportRankingTest {
     }
 
     @Test
+    fun `site upload JSON contains only verified supported links in configs array`() {
+        val fast = verified("fast", 40)
+        val socks = verified("socks", 80, protocol = "SOCKS5", raw = "socks://proxy.example:1080")
+        val unverified = verified("pending", 20).copy(checkStatus = "TCP доступен · HTTPS-туннель не подтверждён")
+
+        val payload = org.json.JSONObject(buildSiteUploadJson(listOf(socks, unverified, fast)))
+        val configs = payload.getJSONArray("configs")
+
+        assertEquals("Scaner Proxy X Android", payload.getString("source"))
+        assertEquals(2, configs.length())
+        assertEquals("vless://fast@example.com:443", configs.getString(0))
+        assertEquals("socks://proxy.example:1080", configs.getString(1))
+    }
+
+    @Test
     fun `export ranks lower latency ahead when quality scores match`() {
         val slower = verified("slower", 180)
         val faster = verified("faster", 120)

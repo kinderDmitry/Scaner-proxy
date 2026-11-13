@@ -155,6 +155,25 @@ private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
     private var pendingHiddifyExport: List<ProxyItem> = emptyList()
+    private var pendingSiteExport: List<ProxyItem> = emptyList()
+    private val siteJsonFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            try {
+                val payload = withContext(Dispatchers.Default) {
+                    buildSiteUploadJson(pendingSiteExport)
+                }
+                val count = withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(payload.toByteArray(Charsets.UTF_8))
+                        org.json.JSONObject(payload).getJSONArray("configs").length()
+                    } ?: error("Не удалось открыть файл")
+                }
+                Toast.makeText(this@MainActivity, "JSON для сайта сохранён: $count проверенных конфигураций", Toast.LENGTH_LONG).show()
+            } catch (error: Exception) {
+                Toast.makeText(this@MainActivity, "Ошибка сохранения: ${error.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     private val jsonFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) lifecycleScope.launch {
             try {
@@ -341,6 +360,10 @@ class MainActivity : ComponentActivity() {
                             pendingHiddifyExport = items
                             jsonFileLauncher.launch("hiddify-singbox-filtered-${System.currentTimeMillis()}.json")
                         },
+                        onSaveSiteJson = { items ->
+                            pendingSiteExport = items
+                            siteJsonFileLauncher.launch("scaner-proxy-site-" + System.currentTimeMillis() + ".json")
+                        },
                         onUploadToSite = { items -> promptSiteUpload(items) }
                     )
                 }
@@ -468,7 +491,7 @@ internal fun namedConfigForImport(item: ProxyItem): String {
 }
 
 @Composable
-private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit, onUploadToSite: (List<ProxyItem>) -> Unit) {
+private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Unit, onCopy: (String) -> Unit, onBulkShare: (List<ProxyItem>) -> Unit, onCopyHappJson: (List<ProxyItem>) -> Unit, onCopyAllJson: (List<ProxyItem>) -> Unit, onSaveSiteJson: (List<ProxyItem>) -> Unit, onUploadToSite: (List<ProxyItem>) -> Unit) {
     var allItems by remember { mutableStateOf(emptyList<ProxyItem>()) }
     var totalStoredCount by remember { mutableIntStateOf(0) }
     var totalVerifiedCount by remember { mutableIntStateOf(0) }
@@ -1134,6 +1157,17 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Spacer(Modifier.width(8.dp))
                         Text("Сохранить sing-box JSON для Hiddify", color = AccentCyan)
                     }
+                    OutlinedButton(
+                        onClick = { onSaveSiteJson(exportItems) },
+                        enabled = exportItems.any { it.isExportReady && (it.protocol.equals("SOCKS5", true) || it.protocol.equals("VLESS", true)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Download, null, tint = Green)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Скачать JSON для сайта", color = Green)
+                    }
+                    Text("Сохраняет только проверенные узлы с учётом выбранных фильтров. Этот файл загружается через форму на сайте.", color = TextMuted, fontSize = 11.sp, lineHeight = 14.sp)
                     OutlinedButton(onClick = { onUploadToSite(allItems) }, enabled = allItems.any { it.isExportReady && (it.protocol.equals("SOCKS5", true) || it.protocol.equals("VLESS", true)) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.CloudUpload, null, tint = Green)
                         Spacer(Modifier.width(8.dp))
