@@ -337,7 +337,9 @@ def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int 
             break
     items = list(candidates.values())
     if not items:
-        print("No uploaded JSON yet; existing published catalog was preserved")
+        if not (site_dir / "data.json").exists():
+            write_outputs([], site_dir)
+        print("No uploaded JSON yet; empty catalog generated or existing catalog preserved")
         return {"candidates": 0, "verified": 0}
     verified = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:

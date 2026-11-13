@@ -172,6 +172,18 @@ class OutputTests(unittest.TestCase):
             lines = [line for line in (site / "sub" / "all.txt").read_text().splitlines() if line.startswith("socks://")]
             self.assertEqual(lines, [faster["uri"], slower["uri"]])
 
+    def test_first_empty_run_creates_valid_subscription_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sources = root / "sources.json"
+            sources.write_text('{"sources":[]}', encoding="utf-8")
+            site = root / "site"
+            with patch.object(mod, "fetch_uploaded", return_value=[]):
+                result = mod.build(sources, "missing-sing-box", site)
+            self.assertEqual(result, {"candidates": 0, "verified": 0})
+            self.assertEqual(json.loads((site / "data.json").read_text())["total"], 0)
+            self.assertTrue((site / "sub" / "all.txt").exists())
+
     def test_empty_run_preserves_existing_catalog(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
