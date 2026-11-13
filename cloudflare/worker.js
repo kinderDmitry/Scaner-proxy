@@ -58,7 +58,7 @@ export default {
     let payload;
     try { payload = JSON.parse(raw); } catch { return json({ error: "Invalid JSON" }, 400); }
     const configs = Array.isArray(payload) ? payload : payload && payload.configs;
-    if (!Array.isArray(configs) || configs.length < 1 || configs.length > 5000) return json({ error: "Expected configs array with 1..5000 entries" }, 400);
+    if (!Array.isArray(configs) || configs.length < 1 || configs.length > 1000) return json({ error: "Expected configs array with 1..1000 entries" }, 400);
     const normalized = [];
     for (const item of configs) {
       const value = typeof item === "string" ? item : item && (item.uri || item.rawConfig || item.config);
