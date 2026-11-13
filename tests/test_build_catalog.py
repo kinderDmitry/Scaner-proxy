@@ -162,22 +162,39 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(result, {"candidates": 0, "verified": 0})
             self.assertEqual(current.read_text(encoding="utf-8"), "previous-catalog")
 
-    def test_subscription_starts_with_fastest_auto_pick_then_numbered_configs(self):
+    def test_subscription_starts_with_fastest_auto_pick_then_geo_named_configs(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             nodes = [
-                {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example", "port": 1080, "speedMbps": 3.0, "latencyMs": 30},
-                {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example", "port": 1080, "speedMbps": 30.0, "latencyMs": 80},
-                {"uri": "socks://mid.example:1080", "protocol": "SOCKS5", "host": "mid.example", "port": 1080, "speedMbps": 12.0, "latencyMs": 50},
+                {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example", "port": 1080,
+                 "speedMbps": 3.0, "latencyMs": 30, "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+                {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example", "port": 1080,
+                 "speedMbps": 30.0, "latencyMs": 80, "country": "France", "countryCode": "FR", "city": "Paris"},
+                {"uri": "socks://mid.example:1080", "protocol": "SOCKS5", "host": "mid.example", "port": 1080,
+                 "speedMbps": 12.0, "latencyMs": 50, "country": "Netherlands", "countryCode": "NL", "city": "Amsterdam"},
             ]
             mod.write_outputs(nodes, site)
             lines = [line for line in (site / "sub" / "all.txt").read_text().splitlines() if line.startswith("socks://")]
             self.assertTrue(lines[0].startswith("socks://fast.example:1080"))
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
             self.assertTrue(lines[1].startswith("socks://mid.example:1080"))
-            self.assertIn("Конфигурация 1", urllib.parse.unquote(lines[1]))
+            self.assertIn("🇳🇱 Netherlands — Amsterdam", urllib.parse.unquote(lines[1]))
             self.assertTrue(lines[2].startswith("socks://slow.example:1080"))
-            self.assertIn("Конфигурация 2", urllib.parse.unquote(lines[2]))
+            self.assertIn("🇩🇪 Germany — Berlin", urllib.parse.unquote(lines[2]))
+
+    def test_duplicate_geo_labels_receive_unique_suffixes(self):
+        nodes = [
+            {"uri": "socks://first.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+            {"uri": "socks://second.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+            {"uri": "socks://third.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+        ]
+        labels = [urllib.parse.unquote(line.rsplit("#", 1)[1]) for line in mod.subscription_lines(nodes)]
+        self.assertEqual(labels[1:], ["🇩🇪 Germany — Berlin · 1", "🇩🇪 Germany — Berlin · 2"])
+
+    def test_unknown_geo_is_explicit(self):
+        node = {"uri": "socks://unknown.example:1080", "country": "", "countryCode": "", "city": ""}
+        label = urllib.parse.unquote(mod.subscription_lines([{"uri": "socks://auto.example:1080"}, node])[1].rsplit("#", 1)[1])
+        self.assertEqual(label, "❗ Неизвестная геолокация")
 
     def test_outputs_are_sorted_by_measured_speed(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -190,7 +207,9 @@ class OutputTests(unittest.TestCase):
                       "speedMbps": 40.0, "latencyMs": 120}
             mod.write_outputs([slower, faster], site)
             lines = [line for line in (site / "sub" / "all.txt").read_text().splitlines() if line.startswith("socks://")]
-            self.assertEqual(lines, [faster["uri"], slower["uri"]])
+            self.assertTrue(lines[0].startswith(faster["uri"] + "#"))
+            self.assertTrue(lines[1].startswith(slower["uri"] + "#"))
+            self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
 
     def test_first_empty_run_creates_valid_subscription_files(self):
         with tempfile.TemporaryDirectory() as temp:

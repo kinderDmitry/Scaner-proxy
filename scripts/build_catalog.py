@@ -308,12 +308,30 @@ def subscription_uri(uri: str, label: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, urllib.parse.quote(label, safe="")))
 
 
+def location_label(node: dict[str, Any]) -> str:
+    country = str(node.get("country") or "").strip()
+    country_code = str(node.get("countryCode") or "").strip()
+    city = str(node.get("city") or "").strip()
+    if not country:
+        return "❗ Неизвестная геолокация"
+    flag = country_flag(country_code)
+    return flag + " " + country + ((" — " + city) if city else "")
+
+
 def subscription_lines(nodes: list[dict[str, Any]]) -> list[str]:
     if not nodes:
         return []
+    labels = [location_label(node) for node in nodes[1:]]
+    totals: dict[str, int] = {}
+    for label in labels:
+        totals[label] = totals.get(label, 0) + 1
+    seen: dict[str, int] = {}
     lines = [subscription_uri(nodes[0]["uri"], "⚡ Автоподбор")]
-    lines.extend(subscription_uri(node["uri"], f"Конфигурация {index}")
-                 for index, node in enumerate(nodes[1:], start=1))
+    for node, label in zip(nodes[1:], labels):
+        if totals[label] > 1:
+            seen[label] = seen.get(label, 0) + 1
+            label += " · " + str(seen[label])
+        lines.append(subscription_uri(node["uri"], label))
     return lines
 
 
@@ -329,6 +347,12 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
         if lines: body += "\n"
         (sub / (key + ".txt")).write_text(body, encoding="utf-8")
         (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + "\n", encoding="ascii")
+    payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
+        "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
+        "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps", "services")} for x in verified]}
+    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
 
 def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
     raw = fetch_uploaded()
