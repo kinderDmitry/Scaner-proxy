@@ -89,18 +89,29 @@ jobs:
         run: '"$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"'
 
       - name: Run unit tests
-        run: gradle testDebugUnitTest --stacktrace
+        run: gradle testDebugUnitTest -PappVersionCode="$GITHUB_RUN_NUMBER" --stacktrace
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleDebug -PappVersionCode="$GITHUB_RUN_NUMBER" --stacktrace
+
+      - name: Verify APK update metadata
+        shell: bash
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          BADGING="$("$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk)"
+          echo "$BADGING" | grep -F "package: name='com.happ.proxyfinder' versionCode='$GITHUB_RUN_NUMBER'"
+          echo "$BADGING" | grep -F "versionName='1.10.0'"
 
       - name: Prepare versioned APK
         shell: bash
-        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Scaner-Proxy-X-v1.10.0.apk
+        run: |
+          APK_NAME="Scaner-Proxy-X-v1.10.0-build${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/$APK_NAME"
+          echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Scaner-Proxy-X-v1.10.0
-          path: app/build/outputs/apk/debug/Scaner-Proxy-X-v1.10.0.apk
+          name: Scaner-Proxy-X-build-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/${{ env.APK_NAME }}
           if-no-files-found: error
