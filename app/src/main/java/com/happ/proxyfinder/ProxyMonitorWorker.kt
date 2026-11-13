@@ -27,11 +27,12 @@ class ProxyMonitorWorker(
             // Refresh only public, published VLESS/SOCKS5 feeds once per hour, not on every cycle.
             val lastRefresh = prefs.getLong(KEY_LAST_PUBLIC_REFRESH, 0L)
             if (now - lastRefresh >= PUBLIC_REFRESH_INTERVAL_MS) {
-                val discovered = ArrayList<ProxyItem>(300)
+                val discovered = java.util.concurrent.ConcurrentLinkedQueue<ProxyItem>()
+                val discoveredCount = java.util.concurrent.atomic.AtomicInteger()
                 repo.fetchStreaming(setOf("VLESS", "SOCKS5"), onSource = {}) { item ->
-                    if (discovered.size < MAX_DISCOVERED_PER_REFRESH) discovered.add(item)
+                    if (discoveredCount.getAndIncrement() < MAX_DISCOVERED_PER_REFRESH) discovered.add(item)
                 }
-                if (discovered.isNotEmpty()) repo.saveSnapshot(discovered)
+                if (discovered.isNotEmpty()) repo.saveSnapshot(discovered.toList())
                 prefs.edit().putLong(KEY_LAST_PUBLIC_REFRESH, now).apply()
             }
 
