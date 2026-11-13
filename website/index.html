@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#020304"><meta name="description" content="Scaner Proxy X — каталог публичных прокси с проверкой HTTPS-туннеля.">
+<title>Scaner Proxy X — Proxy Intelligence</title>
+<style>
+:root{color-scheme:dark;--bg:#020304;--panel:#080b0f;--cyan:#00d7ff;--white:#fff;--muted:#9caab7;--green:#45e6a5}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -12%,#06212b,transparent 38%),linear-gradient(180deg,#050709,#020304 58%,#010203);color:var(--white);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margin:auto;padding:28px 0 50px}.top{display:flex;align-items:center;gap:14px;margin-bottom:26px}.logo{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#052b37,#061017);border:1px solid #00d7ff8a;box-shadow:0 0 14px #00d7ff45,0 0 34px #00d7ff1d;color:var(--cyan);font-size:25px}.brand{flex:1}.brand strong{display:block;font-size:20px;letter-spacing:1.4px;font-weight:900}.brand small{font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:800}.live{border:1px solid #00d7ff55;color:var(--cyan);border-radius:99px;padding:7px 11px;font-size:10px;font-weight:900;letter-spacing:1px;background:#00d7ff10}
+.panel,.stat{background:linear-gradient(145deg,#101820,#080b0f 75%);border:1px solid #1b3944;border-radius:18px;box-shadow:0 0 17px #00d7ff14,inset 0 1px #ffffff08}.hero{position:relative;overflow:hidden;border:1px solid #00d7ff65;border-radius:25px;padding:28px;background:linear-gradient(140deg,#101820,#080d12 58%,#050709);box-shadow:0 0 22px #00d7ff22,0 0 60px #00d7ff0c;margin-bottom:18px}.hero:before{content:"";position:absolute;inset:-50% 15% auto;height:220px;background:radial-gradient(ellipse,#00d7ff20,transparent 68%);pointer-events:none}.eyebrow{color:var(--cyan);font-size:11px;font-weight:900;letter-spacing:2px;text-transform:uppercase}.hero h1{font-size:clamp(27px,5vw,44px);line-height:1.08;margin:10px 0 12px;letter-spacing:-1.2px}.hero p{max-width:670px;color:#b7c4ce;margin:0;font-size:14px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 24px}.stat{padding:15px 17px}.stat label{display:block;color:var(--muted);font-size:11px;font-weight:700}.stat strong{display:block;font-size:25px;margin-top:5px;font-weight:900}.cyan{color:var(--cyan)}.section-title{font-size:16px;font-weight:850;margin:0 0 11px}.subs{display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-bottom:24px}.sub{padding:17px}.sub-head{display:flex;align-items:center;gap:10px;margin-bottom:7px}.sub-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;background:#00d7ff13;color:var(--cyan);border:1px solid #00d7ff35}.sub h3{font-size:14px;margin:0}.sub p{font-size:12px;color:var(--muted);margin:0 0 13px}.url{font:11px/1.4 ui-monospace,monospace;color:#b8f5ff;overflow-wrap:anywhere;background:#020608;border:1px solid #16343e;border-radius:10px;padding:10px;margin-bottom:9px}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid #00d7ff65;background:#00d7ff13;color:#a8f2ff;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:800;text-decoration:none}.btn.primary{background:var(--cyan);color:#031116;border-color:var(--cyan)}.btn:disabled{opacity:.5}.toolbar{display:flex;gap:10px;margin-bottom:12px}.search{flex:1;min-width:0;background:#070b0f;border:1px solid #21404a;border-radius:12px;padding:12px 14px;color:#fff;outline:none}.search:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #00d7ff16}.select{background:#080d12;border:1px solid #21404a;border-radius:12px;color:#fff;padding:12px}.list-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.count{font-size:12px;color:var(--cyan);font-weight:850}.node-list{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}.node{padding:14px;min-width:0}.node-top{display:flex;align-items:center;gap:9px}.protocol{border:1px solid #00d7ff50;background:#00d7ff12;color:var(--cyan);padding:4px 7px;border-radius:7px;font-size:10px;font-weight:900}.verified{color:var(--green);font-size:10px;font-weight:800;margin-left:auto}.node-name{font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:9px}.endpoint{font:12px ui-monospace,monospace;color:#b5c4cf;overflow-wrap:anywhere;margin:4px 0 10px}.node-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}.node-foot small{font-size:10px;color:var(--muted)}.copy-node{border:1px solid #24414b;background:#0b151b;color:#d7f9ff;border-radius:8px;padding:6px 9px;font-size:10px;font-weight:800}.state{padding:35px 18px;text-align:center;color:var(--muted)}.state strong{display:block;color:#fff;margin-bottom:5px}.notice{margin-top:22px;padding:14px 16px;border:1px solid #584426;border-radius:13px;background:#171108;color:#e7c990;font-size:11px}.foot{margin-top:22px;color:#65727d;font-size:10px;text-align:center}
+@media(max-width:720px){.wrap{width:calc(100% - 22px);padding-top:18px}.logo{width:45px;height:45px}.brand strong{font-size:16px}.live{font-size:9px;padding:6px 8px}.hero{padding:21px}.stats{gap:8px}.stat{padding:12px}.stat strong{font-size:21px}.stat label{font-size:10px}.subs,.node-list{grid-template-columns:1fr}.toolbar{flex-wrap:wrap}.search{flex-basis:100%}.select{flex:1}.hero p{font-size:13px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style></head>
+<body><main class="wrap">
+<header class="top"><div class="logo" aria-hidden="true">⌁</div><div class="brand"><strong>SCANER PROXY X</strong><small>NETWORK INTELLIGENCE</small></div><div class="live">● LIVE CATALOG</div></header>
+<section class="hero"><div class="eyebrow">Black Neon · Verified nodes</div><h1>Прокси, которые<br>прошли проверку.</h1><p>Каталог обновляется автоматически. В список попадают только конфигурации, через которые удалось выполнить реальный HTTPS-запрос. Неработающие узлы исключаются из новой публикации.</p></section>
+<section class="stats" aria-label="Статистика"><div class="stat"><label>Рабочих конфигураций</label><strong class="cyan" id="total">—</strong></div><div class="stat"><label>VLESS</label><strong id="vless">—</strong></div><div class="stat"><label>SOCKS5</label><strong id="socks">—</strong></div></section>
+<h2 class="section-title">Подписки для приложений</h2>
+<section class="subs">
+<article class="sub panel"><div class="sub-head"><div class="sub-icon">H</div><h3>Happ · Автообновление</h3></div><p>Вставь HTTPS-ссылку в Happ как обычную подписку. Обновление — каждые 6 часов.</p><div class="url" id="happ-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="happ-url">Скопировать ссылку</button><a class="btn" href="./sub/all.txt" target="_blank" rel="noopener">Открыть список</a></div></article>
+<article class="sub panel"><div class="sub-head"><div class="sub-icon">◈</div><h3>Hiddify · Автообновление</h3></div><p>Добавь профиль по HTTPS URL. Только проверенные VLESS и SOCKS5.</p><div class="url" id="hiddify-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="hiddify-url">Скопировать ссылку</button><a class="btn" href="./sub/all.base64" target="_blank" rel="noopener">Base64</a></div></article>
+</section>
+<div class="list-head"><h2 class="section-title" style="margin:0">Проверенные узлы</h2><span class="count" id="visible-count">Загрузка…</span></div>
+<div class="toolbar"><input id="search" class="search" type="search" placeholder="Поиск по IP, домену или названию" aria-label="Поиск по узлам"><select id="protocol" class="select" aria-label="Фильтр протокола"><option value="all">Все протоколы</option><option value="VLESS">VLESS</option><option value="SOCKS5">SOCKS5</option></select><button class="btn" id="reload">Обновить</button></div>
+<section id="nodes" class="node-list" aria-live="polite"><div class="state panel" style="grid-column:1/-1">Загружаем актуальный каталог…</div></section>
+<div id="updated" class="foot">Последнее обновление: ожидаем данные</div>
+<aside class="notice">⚠️ Это публичные сторонние узлы, не принадлежащие Scaner Proxy X. Их оператор может видеть часть сетевого трафика. Не используй бесплатные прокси для банков, паролей и другой чувствительной информации. Проверка подтверждает доступность HTTPS-туннеля на момент теста, но не гарантирует скорость, приватность или дальнейшую стабильность.</aside>
+<footer class="foot">SCANER PROXY X · PUBLIC FEED AGGREGATOR · Обновление каждые 6 часов</footer>
+</main>
+<script>
+(() => {
+ const $ = id => document.getElementById(id);
+ const subscription = new URL('sub/all.txt', new URL('.', window.location.href)).href;
+ $('happ-url').textContent = subscription; $('hiddify-url').textContent = subscription;
+ let nodes = [];
+ async function copyText(value, button) {
+  const old = button.textContent;
+  try { await navigator.clipboard.writeText(value); }
+  catch (_) { const area=document.createElement('textarea'); area.value=value; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); }
+  button.textContent='Скопировано ✓'; setTimeout(()=>button.textContent=old,1400);
+ }
+ function render() {
+  const query=$('search').value.trim().toLowerCase(), protocol=$('protocol').value;
+  const filtered=nodes.filter(n=>(protocol==='all'||n.protocol===protocol)&&(n.name+' '+n.host+' '+n.port+' '+n.protocol).toLowerCase().includes(query));
+  $('visible-count').textContent=filtered.length+' из '+nodes.length;
+  const root=$('nodes'); root.replaceChildren();
+  if(!filtered.length){const empty=document.createElement('div');empty.className='state panel';empty.style.gridColumn='1/-1';const title=document.createElement('strong');title.textContent=nodes.length?'Ничего не найдено':'Пока нет подтверждённых узлов';const note=document.createElement('span');note.textContent=nodes.length?'Измени поисковый запрос или фильтр.':'Каталог наполнится после успешной проверки источников.';empty.append(title,note);root.append(empty);return;}
+  for(const n of filtered){
+   const card=document.createElement('article');card.className='node panel';
+   const top=document.createElement('div');top.className='node-top';
+   const tag=document.createElement('span');tag.className='protocol';tag.textContent=n.protocol;
+   const ok=document.createElement('span');ok.className='verified';ok.textContent='✓ ПРОВЕРЕН';top.append(tag,ok);
+   const name=document.createElement('div');name.className='node-name';name.textContent=n.name||n.host;
+   const endpoint=document.createElement('div');endpoint.className='endpoint';endpoint.textContent=n.host+':'+n.port;
+   const foot=document.createElement('div');foot.className='node-foot';
+   const time=document.createElement('small');time.textContent='HTTPS-туннель · '+new Date(n.checkedAt).toLocaleString('ru-RU');
+   const copy=document.createElement('button');copy.className='copy-node';copy.textContent='Копировать';copy.addEventListener('click',()=>copyText(n.uri,copy));
+   foot.append(time,copy);card.append(top,name,endpoint,foot);root.append(card);
+  }
+ }
+ async function load() {
+  $('reload').disabled=true;$('reload').textContent='Загрузка…';
+  try {
+   const response=await fetch('./data.json?t='+Date.now(),{cache:'no-store'});
+   if(!response.ok)throw new Error('HTTP '+response.status);
+   const data=await response.json();nodes=Array.isArray(data.nodes)?data.nodes:[];
+   $('total').textContent=data.total??nodes.length;$('vless').textContent=data.protocols?.VLESS??0;$('socks').textContent=data.protocols?.SOCKS5??0;
+   $('updated').textContent='Последнее обновление: '+(data.updatedAt?new Date(data.updatedAt).toLocaleString('ru-RU'):'нет данных')+' · '+(data.verification||'');
+   render();
+  } catch (_) {
+   const root=$('nodes');root.replaceChildren();const empty=document.createElement('div');empty.className='state panel';empty.style.gridColumn='1/-1';
+   const title=document.createElement('strong');title.textContent='Не удалось загрузить каталог';const note=document.createElement('span');note.textContent='Проверь публикацию Pages и завершение последнего обновления.';empty.append(title,note);root.append(empty);$('visible-count').textContent='Нет данных';
+  } finally {$('reload').disabled=false;$('reload').textContent='Обновить';}
+ }
+ document.querySelectorAll('[data-copy-url]').forEach(button=>button.addEventListener('click',()=>copyText($(button.dataset.copyUrl).textContent,button)));
+ $('search').addEventListener('input',render);$('protocol').addEventListener('change',render);$('reload').addEventListener('click',load);load();
+})();
+</script></body></html>
