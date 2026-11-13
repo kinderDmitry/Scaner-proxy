@@ -70,10 +70,14 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
    const ok=document.createElement('span');ok.className='verified';ok.textContent='✓ ПРОВЕРЕН';top.append(tag,ok);
    const name=document.createElement('div');name.className='node-name';name.textContent=n.name||n.host;
    const endpoint=document.createElement('div');endpoint.className='endpoint';endpoint.textContent=n.host+':'+n.port;
+   const services=document.createElement('small');services.style.display='block';services.style.color='#9caab7';services.style.margin='5px 0';
+   const checks=n.services||{};const failed=Object.entries(checks).filter(([,v])=>!v.ok).map(([name])=>name);
+   services.textContent=Object.entries(checks).map(([name,value])=>name+(value.ok?' ✓':' ✕')).join(' · ')||'Сервисы ещё не проверены';
+   if(failed.length){const comment=document.createElement('small');comment.style.display='block';comment.style.color='#ffc66d';comment.textContent='Комментарий: недоступны '+failed.join(', ');card.append(comment);}
    const foot=document.createElement('div');foot.className='node-foot';
    const time=document.createElement('small');time.textContent=(n.speedMbps?Number(n.speedMbps).toFixed(1)+' Мбит/с · ':'')+(n.latencyMs?n.latencyMs+' мс · ':'')+'Проверено · '+new Date(n.checkedAt).toLocaleString('ru-RU');
    const copy=document.createElement('button');copy.className='copy-node';copy.textContent='Копировать';copy.addEventListener('click',()=>copyText(n.uri,copy));
-   foot.append(time,copy);card.append(top,name,endpoint,foot);root.append(card);
+   foot.append(time,copy);card.append(top,name,endpoint,services,foot);root.append(card);
   }
  }
  async function load() {

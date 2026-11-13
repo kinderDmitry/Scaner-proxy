@@ -14,6 +14,11 @@ ALLOWED_SOURCE_HOSTS = {"raw.githubusercontent.com"}
 SUPPORTED = {"vless", "socks", "socks5"}
 TEST_URL = "https://www.gstatic.com/generate_204"
 SPEED_URL = "https://speed.cloudflare.com/__down?bytes=262144"
+SERVICE_TESTS = {
+    "YouTube": "https://www.youtube.com/generate_204",
+    "Instagram": "https://www.instagram.com/robots.txt",
+    "ChatGPT": "https://chatgpt.com/",
+}
 GEO_CACHE: dict[str, dict[str, str]] = {}
 GEO_LOCK = threading.Lock()
 
@@ -203,6 +208,22 @@ def to_singbox_outbound(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+
+def check_services(local_port: int) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    proxy = "socks5h://127.0.0.1:" + str(local_port)
+    for name, url in SERVICE_TESTS.items():
+        try:
+            result = subprocess.run(["curl", "--silent", "--show-error", "--location", "--output", "/dev/null",
+                "--write-out", "%{http_code}", "--max-time", "5", "--connect-timeout", "2",
+                "--proxy", proxy, url], capture_output=True, text=True, timeout=6)
+            status = int(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip().isdigit() else None
+            results[name] = {"ok": status is not None and 200 <= status < 400, "status": status}
+        except (OSError, ValueError, subprocess.SubprocessError):
+            results[name] = {"ok": False, "status": None}
+    return results
+
+
 def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None:
     if not is_public_host(item["host"]):
         return None
@@ -250,6 +271,7 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
                 item.update(lookup_geo(item["host"]))
                 item["latencyMs"] = latency_ms
                 item["speedMbps"] = speed_mbps
+                item["services"] = check_services(local_port)
                 item["verified"] = True
                 item["checkedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
                 item["test"] = "HTTPS 204 через туннель"
