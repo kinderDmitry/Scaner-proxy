@@ -201,7 +201,7 @@ class MainActivity : ComponentActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("Выгрузка на сайт")
-            .setMessage("Будут отправлены только рабочие конфигурации из текущих фильтров: ${exportable.size}.")
+            .setMessage("Будет отправлен полный каталог проверенных конфигураций, независимо от текущих фильтров и лимита отображения: ${exportable.size}.")
             .setView(layout)
             .setPositiveButton("Отправить") { _, _ ->
                 val baseUrl = endpoint.text.toString().trim().trimEnd('/')
@@ -1134,7 +1134,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Spacer(Modifier.width(8.dp))
                         Text("Сохранить sing-box JSON для Hiddify", color = AccentCyan)
                     }
-                    OutlinedButton(onClick = { onUploadToSite(exportItems) }, enabled = exportItems.isNotEmpty(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    OutlinedButton(onClick = { onUploadToSite(exportItems) }, enabled = allItems.any { it.isExportReady && (it.protocol.equals("SOCKS5", true) || it.protocol.equals("VLESS", true)) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                         Icon(Icons.Default.CloudUpload, null, tint = Green)
                         Spacer(Modifier.width(8.dp))
                         Text("Выгрузить полный каталог на сайт", color = Green)
