@@ -85,6 +85,19 @@ internal class BoundedInputStream(input: InputStream, private val maxBytes: Long
 }
 
 /** Fetches public configuration feeds. Feed contents are untrusted input and are never executed. */
+
+internal fun formatServiceCheckSummary(statuses: Map<String, Int?>): String {
+    val labels = listOf("YouTube", "Instagram", "ChatGPT")
+    return labels.joinToString(" · ") { name ->
+        val status = statuses[name]
+        when {
+            status == null -> "$name ❗ нет ответа"
+            status in 200..399 -> "$name ✓"
+            else -> "$name ✗ HTTP $status"
+        }
+    }
+}
+
 class ProxyRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("proxy_finder", Context.MODE_PRIVATE)
     private val store = ProxyStore(context)
@@ -534,7 +547,19 @@ class ProxyRepository(private val context: Context) {
                     val status = probeHttp204(item, targetHost, 443, targetPath)
                     if (status == 204) {
                         val elapsed = ((System.nanoTime() - attemptStarted) / 1_000_000).toInt().coerceAtLeast(1)
-                        return@withContext item.copy(checkStatus = "Проверен через HTTPS-туннель · HTTP 204", latencyMs = elapsed, checkedAt = checkedAt)
+                        val serviceStatuses = listOf(
+                            "YouTube" to ("www.youtube.com" to "/generate_204"),
+                            "Instagram" to ("www.instagram.com" to "/robots.txt"),
+                            "ChatGPT" to ("chatgpt.com" to "/")
+                        ).associate { (name, target) ->
+                            name to runCatching { probeHttp204(item, target.first, 443, target.second) }.getOrNull()
+                        }
+                        val serviceSummary = formatServiceCheckSummary(serviceStatuses)
+                        return@withContext item.copy(
+                            checkStatus = "Проверен через HTTPS-туннель · $serviceSummary",
+                            latencyMs = elapsed,
+                            checkedAt = checkedAt
+                        )
                     }
                     lastStatus = status
                 } catch (error: Exception) {
