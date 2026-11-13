@@ -60,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -78,18 +79,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Bg = Color(0xFF070B12)
-private val Surface = Color(0xFF0D1724)
-private val SurfaceRaised = Color(0xFF132235)
-private val AccentCyan = Color(0xFF35C8F4)
-private val AccentCyanDeep = Color(0xFF087FAE)
-private val AccentCyanSoft = Color(0xFF9CEBFF)
-private val Green = Color(0xFF52E6A6)
-private val Amber = Color(0xFFFFC76A)
-private val Red = Color(0xFFFF7189)
-private val TextPrimary = Color(0xFFF2F6FC)
-private val TextMuted = Color(0xFFA6B5C8)
-private val Line = Color(0xFF26394D)
+private val Bg = Color(0xFF020304)
+private val Surface = Color(0xFF080B0F)
+private val SurfaceRaised = Color(0xFF10161D)
+private val AccentCyan = Color(0xFF00D7FF)
+private val AccentCyanDeep = Color(0xFF007C9D)
+private val AccentCyanSoft = Color(0xFFB8F5FF)
+private val Green = Color(0xFF45E6A5)
+private val Amber = Color(0xFFFFC66D)
+private val Red = Color(0xFFFF647C)
+private val TextPrimary = Color(0xFFFFFFFF)
+private val TextMuted = Color(0xFFAAB5C1)
+private val Line = Color(0xFF1A3540)
 
 internal val SupportedProxyProtocols = listOf("VLESS", "SOCKS5")
 
@@ -100,9 +101,19 @@ internal fun matchesCountrySelection(item: ProxyItem, selectedCountries: Set<Str
     selectedCountries.isEmpty() || item.country in selectedCountries
 
 private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape(18.dp)): Modifier =
-    this.clip(shape)
-        .background(Brush.linearGradient(listOf(SurfaceRaised, Surface, Bg)))
-        .border(BorderStroke(1.dp, Brush.linearGradient(listOf(AccentCyan.copy(alpha = 0.30f), Line, AccentCyan.copy(alpha = 0.08f)))), shape)
+    this.drawBehind {
+        drawRoundRect(
+            brush = Brush.radialGradient(
+                colors = listOf(AccentCyan.copy(alpha = 0.16f), AccentCyan.copy(alpha = 0.045f), Color.Transparent),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.08f),
+                radius = size.maxDimension * 0.92f
+            ),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx())
+        )
+    }
+        .clip(shape)
+        .background(Brush.verticalGradient(listOf(Color(0xFF111820), Surface, Bg)))
+        .border(BorderStroke(1.dp, Brush.linearGradient(listOf(AccentCyan.copy(alpha = 0.48f), Line, AccentCyan.copy(alpha = 0.16f)))), shape)
 
 class MainActivity : ComponentActivity() {
     private lateinit var repository: ProxyRepository
@@ -122,8 +133,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(7, 11, 18)
-        window.navigationBarColor = android.graphics.Color.rgb(7, 11, 18)
+        window.statusBarColor = android.graphics.Color.rgb(2, 3, 4)
+        window.navigationBarColor = android.graphics.Color.rgb(2, 3, 4)
         repository = ProxyRepository(this)
         setContent {
             val scheme = darkColorScheme(
@@ -667,7 +678,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
     }.sortedWith(compareByDescending<ProxyItem> { it.qualityScore }.thenBy { it.latencyMs ?: Int.MAX_VALUE }.thenBy { it.host }) }
     val displayedItems = remember(visible, displayLimit) { visible.take(displayLimit) }
 
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B1726), Bg, Color(0xFF050A12))))) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF050709), Bg, Color(0xFF010203))))) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -827,7 +838,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         .padding(horizontal = 14.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF162A3D)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Refresh, null, tint = AccentCyan, modifier = Modifier.size(19.dp))
                     }
                     Spacer(Modifier.width(10.dp))
@@ -869,10 +880,10 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
             }
             item(key = "error") {
                 AnimatedVisibility(visible = errorMessage.isNotBlank(), enter = fadeIn() + slideInVertically(), exit = fadeOut() + slideOutVertically()) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF281412)).border(1.dp, Red.copy(alpha = 0.28f), RoundedCornerShape(12.dp)).padding(12.dp), verticalAlignment = Alignment.Top) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF17090D)).border(1.dp, Red.copy(alpha = 0.28f), RoundedCornerShape(12.dp)).padding(12.dp), verticalAlignment = Alignment.Top) {
                         Icon(Icons.Default.Close, null, tint = Amber, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(errorMessage, color = Color(0xFFFFD7A0), fontSize = 13.sp, lineHeight = 17.sp)
+                        Text(errorMessage, color = Color(0xFFFFDDE2), fontSize = 13.sp, lineHeight = 17.sp)
                     }
                 }
             }
@@ -942,14 +953,14 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         enabled = exportItems.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
                         shape = RoundedCornerShape(15.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF36BCE8), contentColor = Color(0xFF06131C)),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan, contentColor = Color(0xFF06131C)),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
                     ) {
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(19.dp))
                         Spacer(Modifier.width(9.dp))
                         Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f)) {
                             Text("Поделиться конфигурациями", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("${exportItems.size} узлов · Happ проверит и отсортирует по пингу", fontSize = 11.sp, color = Color(0xFF0A3449))
+                            Text("${exportItems.size} узлов · Happ проверит и отсортирует по пингу", fontSize = 11.sp, color = Color(0xFF06151B))
                         }
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(17.dp))
                     }
@@ -978,7 +989,7 @@ private fun ProxyFinderScreen(repo: ProxyRepository, onShare: (ProxyItem) -> Uni
                         Text("Результаты", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Text("Сначала самые быстрые по пингу", color = TextMuted, fontSize = 12.sp)
                     }
-                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF142B3D)).padding(horizontal = 11.dp, vertical = 7.dp)) {
+                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(SurfaceRaised).padding(horizontal = 11.dp, vertical = 7.dp)) {
                         Text("${visible.size} узлов", color = AccentCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -1128,7 +1139,7 @@ private fun LocalEndpointCard(endpoint: OpenEndpoint) {
             Text("TCP " + endpoint.latencyMs + " мс", color = AccentCyanSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Tag(endpoint.protocol, if (endpoint.protocol == "TCP") Color(0xFF26384A) else Color(0xFF17374A), if (endpoint.protocol == "TCP") Amber else AccentCyan)
+            Tag(endpoint.protocol, if (endpoint.protocol == "TCP") SurfaceRaised else Color(0xFF102A34), if (endpoint.protocol == "TCP") Amber else AccentCyan)
             Text(endpoint.status, color = TextMuted, fontSize = 11.sp, modifier = Modifier.weight(1f))
         }
     }
@@ -1207,7 +1218,7 @@ private fun ProxyCard(item: ProxyItem, onFavorite: () -> Unit, onCheck: () -> Un
     ) {
         Column(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(borderColor.copy(alpha = 0.08f), Color.Transparent))).padding(14.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF16283A)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(SurfaceRaised), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.Public, null, tint = if (item.isTunnelVerified) Green else if (item.checkStatus.startsWith("TCP доступен")) Amber else AccentCyan, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
@@ -1303,7 +1314,7 @@ private fun EmptyState(loading: Boolean, onScan: () -> Unit) {
         Modifier.fillMaxWidth().padding(vertical = 30.dp).premiumPanel(RoundedCornerShape(22.dp)).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFF142638)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(58.dp).clip(CircleShape).background(SurfaceRaised), contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Search, null, tint = AccentCyan, modifier = Modifier.size(29.dp))
         }
         Text(if (loading) "Ищем конфигурации" else "Пока ничего не найдено", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
