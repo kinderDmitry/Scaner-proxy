@@ -183,7 +183,7 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences("proxy_finder", MODE_PRIVATE)
         val endpoint = EditText(this).apply {
             hint = "https://your-worker.workers.dev"
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
             setText(preferences.getString("site_upload_url", ""))
         }
