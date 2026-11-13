@@ -307,12 +307,17 @@ class MainActivity : ComponentActivity() {
 internal fun buildSiteUploadJson(items: Iterable<ProxyItem>): String {
     val configs = rankExportableProxies(items)
     require(configs.isNotEmpty()) { "Нет проверенных конфигураций для выгрузки" }
+    require(configs.size <= 1000) { "Сайт принимает не более 1000 конфигураций за одну загрузку. Сейчас: ${configs.size}." }
     val array = org.json.JSONArray()
     configs.forEach { array.put(it.rawConfig.trim()) }
-    return org.json.JSONObject()
+    val payload = org.json.JSONObject()
         .put("configs", array)
         .put("source", "Scaner Proxy X Android")
         .toString()
+    require(payload.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
+        "JSON превышает лимит сайта 2 МБ. Уменьши число конфигураций."
+    }
+    return payload
 }
 
 /**
