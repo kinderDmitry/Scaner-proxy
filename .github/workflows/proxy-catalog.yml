@@ -45,15 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ASSET_URL="$(python - <<'PY'
-          import json, urllib.request
-          req = urllib.request.Request('https://api.github.com/repos/SagerNet/sing-box/releases/latest', headers={'User-Agent':'ScanerProxyX'})
-          with urllib.request.urlopen(req, timeout=20) as r: data=json.load(r)
-          asset=next(a for a in data['assets'] if 'linux-amd64' in a['name'] and a['name'].endswith('.tar.gz'))
-          print(asset['browser_download_url'])
-          PY
-          )"
-          curl --fail --location --retry 3 "$ASSET_URL" -o /tmp/sing-box.tar.gz
+          curl --fail --location --retry 3 "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz" -o /tmp/sing-box.tar.gz
           mkdir -p /tmp/sing-box-unpack
           tar -xzf /tmp/sing-box.tar.gz -C /tmp/sing-box-unpack
           install "$(find /tmp/sing-box-unpack -type f -name sing-box -print -quit)" /usr/local/bin/sing-box
