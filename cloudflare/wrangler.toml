@@ -1,0 +1,4 @@
+name = "scaner-proxy-upload"
+main = "worker.js"
+compatibility_date = "2026-11-13"
+workers_dev = true

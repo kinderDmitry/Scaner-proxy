@@ -101,6 +101,28 @@ def fetch_sources(config_path: Path) -> list[tuple[str, str]]:
     return collected
 
 
+
+def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> list[tuple[str, str]]:
+    """Read configs explicitly uploaded by the app/site; never execute imported data."""
+    if not config_path.exists():
+        return []
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    values = payload.get("configs", []) if isinstance(payload, dict) else payload
+    if not isinstance(values, list):
+        raise ValueError("Uploaded JSON must contain a configs array")
+    collected: list[tuple[str, str]] = []
+    for value in values[:MAX_CANDIDATES]:
+        if isinstance(value, str):
+            line = value
+        elif isinstance(value, dict):
+            line = str(value.get("uri") or value.get("rawConfig") or value.get("config") or "")
+        else:
+            continue
+        if line.strip():
+            collected.append(("App upload", line.strip()))
+    return collected
+
+
 def to_singbox_outbound(item: dict[str, Any]) -> dict[str, Any]:
     if item["protocol"] == "SOCKS5":
         out = {"type": "socks", "tag": "proxy", "server": item["host"], "server_port": item["port"], "version": "5"}
@@ -206,7 +228,7 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
 
 
 def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
-    raw = fetch_sources(config_path)
+    raw = fetch_uploaded() + fetch_sources(config_path)
     candidates, per_source = {}, {}
     for source_name, line in raw:
         if per_source.get(source_name, 0) >= 200:

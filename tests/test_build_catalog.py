@@ -35,6 +35,26 @@ class FeedParsingTests(unittest.TestCase):
         body = "vless://11111111-1111-4111-8111-111111111111@example.com:443#node\n"
         self.assertIn("vless://", mod.decode_feed(base64.b64encode(body.encode())))
 
+
+    def test_reads_uploaded_json_config_strings_and_objects(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "upload.json"
+            path.write_text(json.dumps({"configs": [
+                "vless://11111111-1111-4111-8111-111111111111@example.com:443#node",
+                {"uri": "socks5://proxy.example:1080"}
+            ]}), encoding="utf-8")
+            result = mod.fetch_uploaded(path)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result[0][0], "App upload")
+            self.assertTrue(result[1][1].startswith("socks5://"))
+
+    def test_rejects_invalid_uploaded_json_shape(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "upload.json"
+            path.write_text('{"configs":"not-an-array"}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                mod.fetch_uploaded(path)
+
     def test_rejects_untrusted_feed_hosts(self):
         self.assertTrue(mod.validate_source_url("https://raw.githubusercontent.com/u/r/main/list.txt"))
         self.assertFalse(mod.validate_source_url("https://example.com/list.txt"))

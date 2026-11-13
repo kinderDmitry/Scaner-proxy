@@ -8,9 +8,10 @@ on:
       - 'scripts/**'
       - 'tests/**'
       - 'sources.json'
+      - 'incoming/**'
       - '.github/workflows/proxy-catalog.yml'
   schedule:
-    - cron: '13 */6 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
