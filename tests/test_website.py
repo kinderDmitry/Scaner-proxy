@@ -19,7 +19,7 @@ class WebsiteScriptTests(unittest.TestCase):
     def test_subscription_limit_selects_static_variant(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("all-' + limit + '.txt", html)
-        self.assertIn("all-0.txt", (ROOT / "scripts" / "build_catalog.py").read_text(encoding="utf-8"))
+        self.assertIn("for limit in (0, 10, 25, 50, 100, 200, 500)", (ROOT / "scripts" / "build_catalog.py").read_text(encoding="utf-8"))
 
     def test_inline_javascript_is_valid(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
