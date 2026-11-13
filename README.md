@@ -4,8 +4,8 @@ Static Black Neon web interface deployed to GitHub Pages. GitHub Actions starts 
 
 ## Verification
 
-- Sources are HTTPS raw files from public GitHub repositories.
-- Only VLESS and SOCKS5 links are accepted, matching the protocols targeted by this app.
+- The active catalog input is JSON explicitly uploaded through the website. The current build does not automatically collect the URLs listed in `sources.json`.
+- Only VLESS and SOCKS5 links are accepted from the uploaded JSON, matching the protocols targeted by this app.
 - Hosts resolving to private, loopback, link-local, multicast, or otherwise non-global addresses are rejected.
 - Every published candidate must pass an actual HTTPS 204 request through a local sing-box inbound and the candidate proxy outbound.
 - No arbitrary IP/port scanning, credential guessing, or password brute force is performed.
