@@ -429,13 +429,16 @@ internal fun proxyDisplayName(item: ProxyItem): String {
 internal fun namedConfigForImport(item: ProxyItem): String {
     val normalized = normalizeProxySchemeForHapp(item.rawConfig)
     val displayLabel = proxyDisplayName(item)
-    if (!item.protocol.equals("SOCKS5", ignoreCase = true) || !normalized.startsWith("socks://", ignoreCase = true)) {
-        // Preserve protocols and configurations that have no existing node label.
-        // When a feed already supplies a URI fragment, replace only that label with
-        // the location-only name (flag, country and city).
+    if (item.protocol.equals("VLESS", ignoreCase = true)) {
+        // VLESS names are always normalized to location-only labels, including
+        // links that did not previously contain a URI fragment.
         return if (normalized.contains("://") && displayLabel.isNotBlank()) {
             normalized.substringBefore("#") + "#" + encodeUriComponent(displayLabel)
         } else normalized
+    }
+    if (!item.protocol.equals("SOCKS5", ignoreCase = true) || !normalized.startsWith("socks://", ignoreCase = true)) {
+        // Unsupported protocols are not rewritten into formats they may not support.
+        return normalized
     }
 
     // Build the endpoint from parsed fields so full-Base64 SOCKS imports are normalized too.
