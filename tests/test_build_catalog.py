@@ -299,9 +299,11 @@ class OutputTests(unittest.TestCase):
                              "latencyMs": 35, "speedMbps": 12.5, "checkedAt": "2026-11-14T00:00:00+00:00",
                              "services": {}, "verified": True})
                 return item
-            with patch.object(mod, "fetch_uploaded", return_value=[]), \\
-                 patch.object(mod, "fetch_sources", return_value=[("Public feed", "socks5://scanner.example:1080")]), \\
-                 patch.object(mod, "test_candidate", side_effect=verify):
+            with (
+                patch.object(mod, "fetch_uploaded", return_value=[]),
+                patch.object(mod, "fetch_sources", return_value=[("Public feed", "socks5://scanner.example:1080")]),
+                patch.object(mod, "test_candidate", side_effect=verify),
+            ):
                 result = mod.build(sources, "unused-sing-box", site)
             self.assertEqual(result, {"candidates": 1, "verified": 1})
             self.assertEqual(json.loads((site / "data.json").read_text())["total"], 0)
