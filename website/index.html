@@ -173,32 +173,55 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   if(!result.content?.sha||!result.commit?.sha)throw new Error('GitHub не подтвердил сохранение файла: в ответе отсутствует SHA.');
   return result;
  }
- async function readUploadText(file) {
-  try {
-   if (typeof file.text === 'function') {
-    const text = await file.text();
-    if (typeof text === 'string' && text.length) return text;
-   }
-  } catch (_) {}
-  return await new Promise((resolve, reject) => {
+ async function readUploadBytes(file) {
+  const readWithFileReader = () => new Promise((resolve, reject) => {
    if (typeof FileReader === 'undefined') {
     reject(new Error('Браузер не поддерживает чтение выбранного файла.'));
     return;
    }
    const reader = new FileReader();
-   reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+   reader.onload = () => {
+    if (reader.result instanceof ArrayBuffer) resolve(new Uint8Array(reader.result));
+    else reject(new Error('Браузер вернул содержимое файла в неизвестном формате.'));
+   };
    reader.onerror = () => reject(new Error('Android не смог прочитать содержимое выбранного файла.'));
    reader.onabort = () => reject(new Error('Чтение файла было прервано.'));
-   reader.readAsText(file, 'UTF-8');
+   reader.readAsArrayBuffer(file);
   });
+  let bytes = null;
+  try {
+   if (typeof file.arrayBuffer === 'function') {
+    const buffer = await file.arrayBuffer();
+    if (buffer instanceof ArrayBuffer) bytes = new Uint8Array(buffer);
+   }
+  } catch (_) {}
+  if (!bytes || bytes.byteLength === 0) {
+   try { bytes = await readWithFileReader(); }
+   catch (error) {
+    if (!bytes) throw error;
+   }
+  }
+  if (!bytes || bytes.byteLength === 0) {
+   // Some Android document providers report size=0 even when a readable stream exists.
+   // Try the text API as a final compatibility fallback, without trusting file.size.
+   try {
+    if (typeof file.text === 'function') {
+     const text = await file.text();
+     if (typeof text === 'string' && text.length) bytes = new TextEncoder().encode(text);
+    }
+   } catch (_) {}
+  }
+  return bytes || new Uint8Array();
  }
  async function parseUploadFile(file) {
   if (!file) throw new Error('Сначала выбери JSON-файл.');
-  let raw;
-  try { raw = await readUploadText(file); }
+  let bytes;
+  try { bytes = await readUploadBytes(file); }
   catch (error) { throw new Error(error && error.message ? error.message : 'Не удалось прочитать выбранный файл.'); }
-  if (!raw || !raw.trim()) throw new Error('Браузер получил пустое содержимое файла "' + (file.name || 'без имени') + '". Размер по метаданным: ' + Number(file.size || 0) + ' байт. Проверь сохранение файла на устройстве.');
-  if (new TextEncoder().encode(raw).byteLength > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ.');
+  const actualBytes = bytes.byteLength;
+  if (!actualBytes) throw new Error('Браузер действительно прочитал 0 байт из "' + (file.name || 'без имени') + '". Метаданные размера: ' + Number(file.size || 0) + ' байт. Открой файл через системный «Файлы» и выбери сохранённый JSON повторно.');
+  if (actualBytes > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ (фактически прочитано ' + actualBytes + ' байт).');
+  const raw = new TextDecoder('utf-8').decode(bytes);
   const source = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
   let parsed;
   try {
@@ -230,7 +253,7 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
  $('upload').addEventListener('click', async () => {
   const file=$('upload-file').files && $('upload-file').files[0], status=$('upload-status');
   if(!file){status.textContent='Сначала выбери JSON-файл из приложения.';return;}
-  if(file.size>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ.';return;}
+  if(Number(file.size||0)>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ по метаданным.';return;}
   $('upload').disabled=true;
   try {
    const {parsed,configs}=await parseUploadFile(file);
