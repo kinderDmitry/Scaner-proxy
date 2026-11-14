@@ -157,8 +157,9 @@ class MainActivity : ComponentActivity() {
     private val siteJsonFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) lifecycleScope.launch {
             try {
+                val geoResolved = repository.resolveCountries(pendingSiteExport) { }
                 val payload = withContext(Dispatchers.Default) {
-                    buildSiteUploadJson(pendingSiteExport)
+                    buildSiteUploadJson(geoResolved)
                 }
                 val count = withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(uri)?.use { stream ->
@@ -309,7 +310,15 @@ internal fun buildSiteUploadJson(items: Iterable<ProxyItem>): String {
     require(configs.isNotEmpty()) { "Нет проверенных конфигураций для выгрузки" }
     require(configs.size <= 1000) { "Сайт принимает не более 1000 конфигураций за одну загрузку. Сейчас: ${configs.size}." }
     val array = org.json.JSONArray()
-    configs.forEach { array.put(it.rawConfig.trim()) }
+    configs.forEach { item ->
+        array.put(
+            org.json.JSONObject()
+                .put("uri", item.rawConfig.trim())
+                .put("country", item.country.trim())
+                .put("countryCode", item.countryCode.trim().uppercase(java.util.Locale.ROOT))
+                .put("city", item.city.trim())
+        )
+    }
     val payload = org.json.JSONObject()
         .put("configs", array)
         .put("source", "Scaner Proxy X Android")
