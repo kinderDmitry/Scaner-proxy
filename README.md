@@ -25,8 +25,8 @@ Never commit the private key to the repository or paste it into the website. Wit
 
 ## Two independent HAPP subscriptions
 
-- **Uploaded JSON HAPP subscription:** `https://kinderdmitry.github.io/Scaner-proxy/sub/all-happ.txt` — Base64-encoded UTF-8 subscription body served as `text/plain`; raw readable list remains at `sub/all.txt`.
-- **Global public scanner HAPP subscription:** `https://kinderdmitry.github.io/Scaner-proxy/sub/scanner-happ.txt` — separate Base64-encoded UTF-8 subscription; raw list remains at `sub/scanner.txt`. The searchable dashboard is `https://kinderdmitry.github.io/Scaner-proxy/scanner.html`.
+- **Uploaded JSON HAPP subscription:** `https://kinderdmitry.github.io/Scaner-proxy/sub/all.txt` — Base64-encoded UTF-8 subscription body served as `text/plain`; readable raw list remains at `sub/all.raw.txt`.
+- **Global public scanner HAPP subscription:** `https://kinderdmitry.github.io/Scaner-proxy/sub/scanner.txt` — separate Base64-encoded UTF-8 subscription; readable raw list remains at `sub/scanner.raw.txt`. The searchable dashboard is `https://kinderdmitry.github.io/Scaner-proxy/scanner.html`.
 - Each catalog has its own `data.json` (`data.json` and `data-scanner.json`), its own HAPP subscription, and its own Auto Pick. The fastest verified node is first and labeled **⚡ Автоподбор**; subsequent nodes carry the flag, country, and city.
 - HAPP receives the standard Base64 subscription body with a short profile title and `#profile-update-interval: 1`; GitHub Actions refreshes the published catalogs on its five-minute schedule.
 - GitHub Actions refreshes both catalogs on a five-minute schedule. GitHub may delay scheduled starts; it is not an exact five-minute SLA.
