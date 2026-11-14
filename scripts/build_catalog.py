@@ -397,6 +397,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         body = nl.join([
             f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
             "#profile-update-interval: 1",
+            "#subscription-auto-update-enable: 1",
+            "#subscription-auto-update-open-enable: 1",
         ] + lines)
         if lines:
             body += nl
@@ -412,6 +414,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         body = nl.join([
             f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
             "#profile-update-interval: 1",
+            "#subscription-auto-update-enable: 1",
+            "#subscription-auto-update-open-enable: 1",
         ] + selected)
         if selected:
             body += nl
