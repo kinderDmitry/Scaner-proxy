@@ -180,6 +180,7 @@ class OutputTests(unittest.TestCase):
             node = {"uri": "socks://proxy.example:1080#Auto", "protocol": "SOCKS5",
                     "host": "proxy.example", "port": 1080, "speedMbps": 10.0}
             mod.write_outputs([node], site)
+            mod.write_outputs([node], site, prefix="scanner")
             for name, title in (("all.txt", "JSON Upload"),
                                 ("scanner.txt", "Global Scanner")):
                 encoded = (site / "sub" / name).read_text(encoding="ascii").strip()
@@ -229,7 +230,7 @@ class OutputTests(unittest.TestCase):
                  "speedMbps": 12.0, "latencyMs": 50, "country": "Netherlands", "countryCode": "NL", "city": "Amsterdam"},
             ]
             mod.write_outputs(nodes, site)
-            lines = [line for line in (site / "sub" / "all.txt").read_text().splitlines() if line.startswith("socks://")]
+            lines = [line for line in (site / "sub" / "all.raw.txt").read_text().splitlines() if line.startswith("socks://")]
             self.assertTrue(lines[0].startswith("socks://fast.example:1080"))
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
             self.assertTrue(lines[1].startswith("socks://mid.example:1080"))
@@ -350,7 +351,7 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(result, {"candidates": 1, "verified": 1})
             self.assertEqual(json.loads((site / "data.json").read_text())["total"], 0)
             self.assertEqual(json.loads((site / "data-scanner.json").read_text())["total"], 1)
-            scanner_lines = [line for line in (site / "sub" / "scanner.txt").read_text().splitlines()
+            scanner_lines = [line for line in (site / "sub" / "scanner.raw.txt").read_text().splitlines()
                              if line.startswith("socks://")]
             self.assertEqual(len(scanner_lines), 1)
             self.assertIn("Автоподбор", urllib.parse.unquote(scanner_lines[0]))
