@@ -23,14 +23,16 @@ Separately, in **Settings → Secrets and variables → Actions**, create this r
 
 Never commit the private key to the repository or paste it into the website. Without this secret, the upload can be stored but the verification workflow cannot decrypt it.
 
-## Verification and subscriptions
+## Two independent HAPP subscriptions
 
-- GitHub Actions checks the catalog on a five-minute schedule. GitHub may delay scheduled starts; it is not an exact five-minute SLA.
-- Only VLESS and SOCKS5 links are accepted.
-- Hosts resolving to private, loopback, link-local, multicast, or otherwise non-global addresses are rejected.
-- Every published candidate must pass a real HTTPS 204 request through a local sing-box inbound and the candidate proxy outbound.
-- The fastest verified node is always first and labeled **⚡ Автоподбор**. Other nodes are labeled by geolocated country and city.
-- GitHub Pages is static and cannot process a dynamic `?limit=` parameter. The site therefore publishes fixed subscription variants: all nodes, or Auto Pick plus 0/10/25/50/100/200/500 additional nodes.
+- **Uploaded JSON:** `https://kinderdmitry.github.io/Scaner-proxy/sub/all.txt` — only configurations uploaded from the Android app or website.
+- **Global public scanner:** `https://kinderdmitry.github.io/Scaner-proxy/sub/scanner.txt` — configurations collected from the public feeds listed in `sources.json`. The searchable dashboard is `https://kinderdmitry.github.io/Scaner-proxy/scanner.html`.
+- Each catalog has its own `data.json` (`data.json` and `data-scanner.json`), its own HAPP subscription, and its own Auto Pick. The fastest verified node is first and labeled **⚡ Автоподбор**; subsequent nodes carry the flag, country, and city.
+- GitHub Actions refreshes both catalogs on a five-minute schedule. GitHub may delay scheduled starts; it is not an exact five-minute SLA.
+- Public discovery reads published configuration feeds only. It does not sweep arbitrary third-party IP ranges or scan networks without authorization.
+- Only VLESS and SOCKS5 links are accepted. Hosts resolving to private, loopback, link-local, multicast, or otherwise non-global addresses are rejected.
+- Every published candidate must pass a real HTTPS 204 request through a local sing-box inbound and the candidate proxy outbound. Speed and latency are measured separately for each catalog.
+- GitHub Pages is static and cannot process a dynamic `?limit=` parameter. Both subscriptions therefore publish fixed variants: all nodes, or Auto Pick plus 0/10/25/50/100/200/500 additional nodes.
 
 ## Local tests
 
