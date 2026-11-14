@@ -28,6 +28,13 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("JSON повреждён или обрезан", html)
         self.assertNotIn("JSON.parse(await file.text())", html)
 
+    def test_upload_accepts_android_files_even_when_size_metadata_is_zero(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("readUploadText(file)", html)
+        self.assertIn("new FileReader()", html)
+        self.assertNotIn("if (!file || !file.size)", html)
+        self.assertIn("upload-file').addEventListener('change'", html)
+
     def test_upload_parser_validates_config_array_and_count(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("В JSON не найден массив configs", html)
