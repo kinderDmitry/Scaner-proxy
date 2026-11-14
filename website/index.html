@@ -105,13 +105,13 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   try {
    const response=await fetch('./data.json?t='+Date.now(),{cache:'no-store'});
    if(!response.ok)throw new Error('HTTP '+response.status);
-   const data=await response.json();nodes=Array.isArray(data.nodes)?data.nodes:[];
+   const data=await readJsonResponse(response,'Загрузка каталога');nodes=Array.isArray(data.nodes)?data.nodes:[];
    $('total').textContent=data.total??nodes.length;$('vless').textContent=data.protocols?.VLESS??0;$('socks').textContent=data.protocols?.SOCKS5??0;
    $('updated').textContent='Последнее обновление: '+(data.updatedAt?new Date(data.updatedAt).toLocaleString('ru-RU'):'нет данных')+' · '+(data.verification||'');
    render();
-  } catch (_) {
+  } catch (error) {
    const root=$('nodes');root.replaceChildren();const empty=document.createElement('div');empty.className='state panel';empty.style.gridColumn='1/-1';
-   const title=document.createElement('strong');title.textContent='Не удалось загрузить каталог';const note=document.createElement('span');note.textContent='Проверь публикацию Pages и завершение последнего обновления.';empty.append(title,note);root.append(empty);$('visible-count').textContent='Нет данных';
+   const title=document.createElement('strong');title.textContent='Не удалось загрузить каталог';const note=document.createElement('span');note.textContent=error && error.message ? error.message : 'Проверь публикацию Pages и завершение последнего обновления.';empty.append(title,note);root.append(empty);$('visible-count').textContent='Нет данных';
   } finally {$('reload').disabled=false;$('reload').textContent='Обновить';}
  }
  document.querySelectorAll('[data-copy-url]').forEach(button=>button.addEventListener('click',()=>copyText($(button.dataset.copyUrl).textContent,button)));
@@ -163,16 +163,41 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   if(!result.content?.sha||!result.commit?.sha)throw new Error('GitHub не подтвердил сохранение файла: в ответе отсутствует SHA.');
   return result;
  }
+ async function parseUploadFile(file) {
+  if (!file || !file.size) throw new Error('Файл пустой: выбери JSON, сохранённый приложением.');
+  let raw;
+  try { raw = await file.text(); }
+  catch (_) { throw new Error('Не удалось прочитать файл. Выбери его повторно.'); }
+  if (!raw || !raw.trim()) throw new Error('Файл пустой: в нём нет JSON-данных.');
+  const source = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
+  let parsed;
+  try {
+   parsed = JSON.parse(source);
+  } catch (error) {
+   const match = String(error && error.message || '').match(/position\\s+(\\d+)/i);
+   let location = '';
+   if (match) {
+    const offset = Math.min(Number(match[1]), source.length);
+    const before = source.slice(0, offset);
+    location = ' Строка ' + (before.split('\\n').length) + ', столбец ' + (offset - before.lastIndexOf('\\n')) + '.';
+   }
+   const detail = /unexpected end/i.test(String(error && error.message || ''))
+    ? 'JSON повреждён или обрезан.'
+    : 'В файле синтаксическая ошибка JSON.';
+   throw new Error(detail + location + ' Пересохрани JSON из приложения и попробуй снова.');
+  }
+  const configs = Array.isArray(parsed) ? parsed : parsed && parsed.configs;
+  if (!Array.isArray(configs) || configs.length < 1) throw new Error('В JSON не найден массив configs с конфигурациями.');
+  if (configs.length > 1000) throw new Error('В одном файле допускается не более 1000 конфигураций.');
+  return { parsed, configs };
+ }
  $('upload').addEventListener('click', async () => {
   const file=$('upload-file').files[0], status=$('upload-status');
   if(!file){status.textContent='Сначала выбери JSON-файл из приложения.';return;}
   if(file.size>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ.';return;}
   $('upload').disabled=true;
   try {
-   const parsed=JSON.parse(await file.text());
-   const configs=Array.isArray(parsed)?parsed:parsed?.configs;
-   if(!Array.isArray(configs)||configs.length<1)throw new Error('В JSON не найден массив configs с конфигурациями.');
-   if(configs.length>1000)throw new Error('В одном файле допускается не более 1000 конфигураций.');
+   const {parsed,configs}=await parseUploadFile(file);
    if(!githubToken)await githubDeviceLogin(status);
    status.textContent='Шифруем файл в браузере…';
    const envelope=await encryptUpload(parsed);
