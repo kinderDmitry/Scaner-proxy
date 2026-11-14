@@ -163,12 +163,32 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   if(!result.content?.sha||!result.commit?.sha)throw new Error('GitHub не подтвердил сохранение файла: в ответе отсутствует SHA.');
   return result;
  }
+ async function readUploadText(file) {
+  try {
+   if (typeof file.text === 'function') {
+    const text = await file.text();
+    if (typeof text === 'string' && text.length) return text;
+   }
+  } catch (_) {}
+  return await new Promise((resolve, reject) => {
+   if (typeof FileReader === 'undefined') {
+    reject(new Error('Браузер не поддерживает чтение выбранного файла.'));
+    return;
+   }
+   const reader = new FileReader();
+   reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+   reader.onerror = () => reject(new Error('Android не смог прочитать содержимое выбранного файла.'));
+   reader.onabort = () => reject(new Error('Чтение файла было прервано.'));
+   reader.readAsText(file, 'UTF-8');
+  });
+ }
  async function parseUploadFile(file) {
-  if (!file || !file.size) throw new Error('Файл пустой: выбери JSON, сохранённый приложением.');
+  if (!file) throw new Error('Сначала выбери JSON-файл.');
   let raw;
-  try { raw = await file.text(); }
-  catch (_) { throw new Error('Не удалось прочитать файл. Выбери его повторно.'); }
-  if (!raw || !raw.trim()) throw new Error('Файл пустой: в нём нет JSON-данных.');
+  try { raw = await readUploadText(file); }
+  catch (error) { throw new Error(error && error.message ? error.message : 'Не удалось прочитать выбранный файл.'); }
+  if (!raw || !raw.trim()) throw new Error('Браузер получил пустое содержимое файла "' + (file.name || 'без имени') + '". Размер по метаданным: ' + Number(file.size || 0) + ' байт. Проверь сохранение файла на устройстве.');
+  if (new TextEncoder().encode(raw).byteLength > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ.');
   const source = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
   let parsed;
   try {
@@ -191,8 +211,14 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   if (configs.length > 1000) throw new Error('В одном файле допускается не более 1000 конфигураций.');
   return { parsed, configs };
  }
+ $('upload-file').addEventListener('change', () => {
+  const selected = $('upload-file').files && $('upload-file').files[0];
+  $('upload-status').textContent = selected
+   ? 'Выбран файл: ' + (selected.name || 'без имени') + '. Размер по метаданным браузера: ' + Number(selected.size || 0) + ' байт.'
+   : 'Файл не выбран.';
+ });
  $('upload').addEventListener('click', async () => {
-  const file=$('upload-file').files[0], status=$('upload-status');
+  const file=$('upload-file').files && $('upload-file').files[0], status=$('upload-status');
   if(!file){status.textContent='Сначала выбери JSON-файл из приложения.';return;}
   if(file.size>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ.';return;}
   $('upload').disabled=true;
