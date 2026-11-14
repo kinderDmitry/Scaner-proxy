@@ -402,10 +402,12 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         if lines:
             body += nl
         encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
+        # HAPP standard subscriptions are plain UTF-8 text: metadata followed by one URI per line.
+        # Keep the legacy Base64 representation only under the explicit .base64 extension.
         (sub / (filename + ".raw.txt")).write_text(body, encoding="utf-8")
-        (sub / (filename + ".txt")).write_text(encoded_body, encoding="ascii")
+        (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
         (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
-        (sub / (filename + "-happ.txt")).write_text(encoded_body, encoding="ascii")
+        (sub / (filename + "-happ.txt")).write_text(body, encoding="utf-8")
 
     # GitHub Pages is static: publish fixed-size variants with auto-pick always first.
     all_lines = subscription_lines(verified)
@@ -420,10 +422,11 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
             body += nl
         filename = f"{all_name}-{limit}"
         encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
+        # All public .txt endpoints, including fixed-size variants, use the same plain-text format.
         (sub / (filename + ".raw.txt")).write_text(body, encoding="utf-8")
-        (sub / (filename + ".txt")).write_text(encoded_body, encoding="ascii")
+        (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
         (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
-        (sub / (all_name + "-happ-" + str(limit) + ".txt")).write_text(encoded_body, encoding="ascii")
+        (sub / (all_name + "-happ-" + str(limit) + ".txt")).write_text(body, encoding="utf-8")
 
     payload = {
         "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),

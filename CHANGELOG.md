@@ -1,12 +1,19 @@
+## [1.11.1] - 2026-11-14
+
+### Fixed
+- Corrected all HAPP-facing `.txt` subscriptions to return plain UTF-8 text instead of Base64-encoding the entire subscription body.
+- Applied the same format to uploaded JSON, public scanner, HAPP aliases, and every fixed-size limit variant.
+- Retained Base64 output only under the explicit `.base64` extension.
+
 ## [1.11.0] - 2026-11-14
 
 ### Added
 - Separate HAPP subscription for uploaded JSON and public-feed scanner results.
 - Global scanner page with search by country, city, endpoint, protocol and source.
 - Public SOCKS5 feed sources from ProxyScrape and Thordata, alongside the existing VLESS feeds; address-only SOCKS5 rows are normalized using the source protocol declaration.
-- Independent fastest-node Auto Pick and fixed-size subscription variants for both catalogs, including HAPP-ready Base64 links.
-- Added Base64-encoded UTF-8 `.txt` subscription endpoints for HAPP, with short profile titles and official refresh interval metadata.
-- Kept readable raw-text catalog endpoints separately for browser inspection.
+- Independent fastest-node Auto Pick and fixed-size subscription variants for both catalogs.
+- Plain UTF-8 `.txt` subscription endpoints for HAPP, with short profile titles, official refresh interval metadata, and one supported URI per line.
+- Kept explicit `.base64` files for diagnostic/export use; `.raw.txt` files mirror the plain-text subscription body.
 
 ### Changed
 - Catalog builder now fetches and verifies public feeds as a separate source family; uploaded JSON is no longer mixed into scanner results.

@@ -174,7 +174,7 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(data["nodes"][0]["services"]["YouTube"]["ok"], True)
             self.assertIn("Instagram", data["nodes"][0]["services"])
 
-    def test_happ_links_are_plain_text_base64_subscriptions_with_valid_headers(self):
+    def test_happ_subscription_urls_serve_plain_utf8_text_with_supported_uri_lines(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             node = {"uri": "socks://proxy.example:1080#Auto", "protocol": "SOCKS5",
@@ -183,14 +183,22 @@ class OutputTests(unittest.TestCase):
             mod.write_outputs([node], site, prefix="scanner")
             for name, title in (("all.txt", "JSON Upload"),
                                 ("scanner.txt", "Global Scanner")):
-                encoded = (site / "sub" / name).read_text(encoding="ascii").strip()
-                decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
-                self.assertIn("#profile-title: " + title, decoded)
-                self.assertIn("#profile-update-interval: 1", decoded)
-                self.assertIn("socks://proxy.example:1080", decoded)
-                self.assertNotIn("#subscription-auto-update-enable", decoded)
+                published = (site / "sub" / name).read_text(encoding="utf-8")
+                raw_alias = (site / "sub" / name.replace(".txt", ".raw.txt")).read_text(encoding="utf-8")
+                self.assertEqual(published, raw_alias)
+                self.assertTrue(published.startswith("#profile-title: " + title + "\\n"))
+                self.assertIn("#profile-update-interval: 1\\n", published)
+                self.assertIn("\\nsocks://proxy.example:1080", published)
+                self.assertNotIn("#subscription-auto-update-enable", published)
+                self.assertFalse(published.startswith("I3Byb2ZpbGUt"))
+                encoded = (site / "sub" / name.replace(".txt", ".base64")).read_text(encoding="ascii").strip()
+                self.assertEqual(base64.b64decode(encoded, validate=True).decode("utf-8"), published)
+            self.assertEqual((site / "sub" / "all-happ.txt").read_text(encoding="utf-8"),
+                             (site / "sub" / "all.txt").read_text(encoding="utf-8"))
+            self.assertEqual((site / "sub" / "scanner-happ.txt").read_text(encoding="utf-8"),
+                             (site / "sub" / "scanner.txt").read_text(encoding="utf-8"))
 
-    def test_happ_subscription_variants_preserve_limit_and_auto_pick(self):
+    def test_happ_subscription_variants_preserve_limit_and_are_plain_text(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             nodes = [
@@ -199,10 +207,16 @@ class OutputTests(unittest.TestCase):
                 for i in range(3)
             ]
             mod.write_outputs(nodes, site, prefix="scanner")
-            encoded = (site / "sub" / "scanner-10.txt").read_text(encoding="ascii").strip()
-            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
-            self.assertEqual(sum(line.startswith("socks://") for line in decoded.splitlines()), 3)
-            self.assertIn("Автоподбор", urllib.parse.unquote(decoded))
+            for limit in (0, 10, 25, 50, 100, 200, 500):
+                for name in (f"scanner-{limit}.txt", f"scanner-happ-{limit}.txt"):
+                    published = (site / "sub" / name).read_text(encoding="utf-8")
+                    self.assertTrue(published.startswith("#profile-title: Global Scanner\\n"))
+                    self.assertEqual(sum(line.startswith("socks://") for line in published.splitlines()), 3)
+                    self.assertIn("Автоподбор", urllib.parse.unquote(published))
+                    self.assertFalse(published.startswith("I3Byb2ZpbGUt"))
+                encoded = (site / "sub" / f"scanner-{limit}.base64").read_text(encoding="ascii").strip()
+                self.assertEqual(base64.b64decode(encoded, validate=True).decode("utf-8"),
+                                 (site / "sub" / f"scanner-{limit}.txt").read_text(encoding="utf-8"))
 
     def test_no_uploaded_json_keeps_previous_catalog_without_failing(self):
         with tempfile.TemporaryDirectory() as temp:
