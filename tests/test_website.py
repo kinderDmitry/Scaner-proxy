@@ -21,9 +21,22 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("all-' + limit + '.txt", html)
         self.assertIn("for limit in (0, 10, 25, 50, 100, 200, 500)", (ROOT / "scripts" / "build_catalog.py").read_text(encoding="utf-8"))
 
+    def test_upload_parser_reports_empty_and_truncated_files_clearly(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("parseUploadFile", html)
+        self.assertIn("Файл пустой", html)
+        self.assertIn("JSON повреждён или обрезан", html)
+        self.assertNotIn("JSON.parse(await file.text())", html)
+
+    def test_upload_parser_validates_config_array_and_count(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("В JSON не найден массив configs", html)
+        self.assertIn("не более 1000 конфигураций", html)
+        self.assertIn("file.size", html)
+
     def test_inline_javascript_is_valid(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
+        scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
         self.assertTrue(scripts, "website must contain its application script")
         for script in scripts:
             with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as source:
