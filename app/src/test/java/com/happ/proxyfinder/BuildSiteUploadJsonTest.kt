@@ -23,9 +23,9 @@ class BuildSiteUploadJsonTest {
     )
 
     @Test
-    fun exportsSiteContractAsConfigsArrayOfRawUriStrings() {
+    fun exportsSiteConfigsWithUriAndResolvedLocationMetadata() {
         val payload = buildSiteUploadJson(listOf(
-            verified("vless-1"),
+            verified("vless-1").copy(country = "Германия", countryCode = "DE", city = "Франкфурт"),
             verified("socks-1", "SOCKS5", "socks5://proxy.example:1080")
         ))
 
@@ -33,8 +33,12 @@ class BuildSiteUploadJsonTest {
         val configs = json.getJSONArray("configs")
         assertEquals("Scaner Proxy X Android", json.getString("source"))
         assertEquals(2, configs.length())
-        assertEquals("vless://11111111-1111-4111-8111-111111111111@proxy.example:443#node", configs.getString(0))
-        assertEquals("socks5://proxy.example:1080", configs.getString(1))
+        val first = configs.getJSONObject(0)
+        assertEquals("vless://11111111-1111-4111-8111-111111111111@proxy.example:443#node", first.getString("uri"))
+        assertEquals("Германия", first.getString("country"))
+        assertEquals("DE", first.getString("countryCode"))
+        assertEquals("Франкфурт", first.getString("city"))
+        assertEquals("socks5://proxy.example:1080", configs.getJSONObject(1).getString("uri"))
     }
 
     @Test
