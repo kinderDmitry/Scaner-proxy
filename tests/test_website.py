@@ -24,13 +24,14 @@ class WebsiteScriptTests(unittest.TestCase):
     def test_upload_parser_reports_empty_and_truncated_files_clearly(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("parseUploadFile", html)
-        self.assertIn("Браузер получил пустое содержимое файла", html)
+        self.assertIn("Браузер действительно прочитал 0 байт", html)
         self.assertIn("JSON повреждён или обрезан", html)
         self.assertNotIn("JSON.parse(await file.text())", html)
 
     def test_upload_accepts_android_files_even_when_size_metadata_is_zero(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("readUploadText(file)", html)
+        self.assertIn("readUploadBytes(file)", html)
+        self.assertIn("file.stream().getReader()", html)
         self.assertIn("new FileReader()", html)
         self.assertNotIn("if (!file || !file.size)", html)
         self.assertIn("upload-file').addEventListener('change'", html)
