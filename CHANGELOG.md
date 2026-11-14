@@ -4,8 +4,9 @@
 - Separate HAPP subscription for uploaded JSON and public-feed scanner results.
 - Global scanner page with search by country, city, endpoint, protocol and source.
 - Public SOCKS5 feed sources from ProxyScrape and Thordata, alongside the existing VLESS feeds; address-only SOCKS5 rows are normalized using the source protocol declaration.
-- Independent fastest-node Auto Pick and fixed-size subscription variants for both catalogs.
-- HAPP automatic subscription refresh and update-on-open directives in both subscription feeds.
+- Independent fastest-node Auto Pick and fixed-size subscription variants for both catalogs, including HAPP-ready Base64 links.
+- Added Base64-encoded UTF-8 `.txt` subscription endpoints for HAPP, with short profile titles and official refresh interval metadata.
+- Kept readable raw-text catalog endpoints separately for browser inspection.
 
 ### Changed
 - Catalog builder now fetches and verifies public feeds as a separate source family; uploaded JSON is no longer mixed into scanner results.
