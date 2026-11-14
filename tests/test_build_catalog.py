@@ -176,6 +176,35 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(data["nodes"][0]["services"]["YouTube"]["ok"], True)
             self.assertIn("Instagram", data["nodes"][0]["services"])
 
+    def test_happ_links_are_plain_text_base64_subscriptions_with_valid_headers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            site = Path(temp)
+            node = {"uri": "socks://proxy.example:1080#Auto", "protocol": "SOCKS5",
+                    "host": "proxy.example", "port": 1080, "speedMbps": 10.0}
+            mod.write_outputs([node], site)
+            for name, title in (("all-happ.txt", "JSON Upload"),
+                                ("scanner-happ.txt", "Global Scanner")):
+                encoded = (site / "sub" / name).read_text(encoding="ascii").strip()
+                decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+                self.assertIn("#profile-title: " + title, decoded)
+                self.assertIn("#profile-update-interval: 1", decoded)
+                self.assertIn("socks://proxy.example:1080", decoded)
+                self.assertNotIn("#subscription-auto-update-enable", decoded)
+
+    def test_happ_subscription_variants_preserve_limit_and_auto_pick(self):
+        with tempfile.TemporaryDirectory() as temp:
+            site = Path(temp)
+            nodes = [
+                {"uri": f"socks://node{i}.example:1080#node{i}", "protocol": "SOCKS5",
+                 "host": f"node{i}.example", "port": 1080, "speedMbps": 20-i}
+                for i in range(3)
+            ]
+            mod.write_outputs(nodes, site, prefix="scanner")
+            encoded = (site / "sub" / "scanner-happ-1.txt").read_text(encoding="ascii").strip()
+            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+            self.assertEqual(sum(line.startswith("socks://") for line in decoded.splitlines()), 2)
+            self.assertIn("Автоподбор", urllib.parse.unquote(decoded))
+
     def test_no_uploaded_json_keeps_previous_catalog_without_failing(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
