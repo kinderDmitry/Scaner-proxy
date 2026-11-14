@@ -10,8 +10,14 @@ ROOT = Path(__file__).parents[1]
 class WebsiteScriptTests(unittest.TestCase):
     def test_upload_is_github_native_and_has_no_cloudflare_dependencies(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("login/device/code", html)
+        self.assertNotIn("login/device/code", html)
+        self.assertNotIn("login/oauth/access_token", html)
+        self.assertIn('id="github-token"', html)
         self.assertIn("incoming/upload.json", html)
+        self.assertIn("github_pat_", html)
+        self.assertIn("Contents: Read and write", html)
+        self.assertNotIn("localStorage", html)
+        self.assertNotIn("sessionStorage", html)
         self.assertNotIn("workers.dev", html)
         self.assertNotIn("worker-url", html)
         self.assertNotIn("upload-token", html)
