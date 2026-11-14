@@ -189,12 +189,39 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
    reader.readAsArrayBuffer(file);
   });
   let bytes = null;
+  // Try the streaming reader first: some Android content providers expose a usable
+  // stream even when the File metadata and arrayBuffer() implementation are broken.
   try {
-   if (typeof file.arrayBuffer === 'function') {
-    const buffer = await file.arrayBuffer();
-    if (buffer instanceof ArrayBuffer) bytes = new Uint8Array(buffer);
+   if (typeof file.stream === 'function') {
+    const reader = file.stream().getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+     const part = await reader.read();
+     if (part.done) break;
+     if (part.value && part.value.byteLength) {
+      total += part.value.byteLength;
+      if (total > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ.');
+      chunks.push(part.value);
+     }
+    }
+    if (total > 0) {
+     bytes = new Uint8Array(total);
+     let offset = 0;
+     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    }
    }
-  } catch (_) {}
+  } catch (error) {
+   if (error && /превышает лимит/.test(error.message || '')) throw error;
+  }
+  if (!bytes || bytes.byteLength === 0) {
+   try {
+    if (typeof file.arrayBuffer === 'function') {
+     const buffer = await file.arrayBuffer();
+     if (buffer instanceof ArrayBuffer) bytes = new Uint8Array(buffer);
+    }
+   } catch (_) {}
+  }
   if (!bytes || bytes.byteLength === 0) {
    try { bytes = await readWithFileReader(); }
    catch (error) {
@@ -244,11 +271,19 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   if (configs.length > 1000) throw new Error('В одном файле допускается не более 1000 конфигураций.');
   return { parsed, configs };
  }
- $('upload-file').addEventListener('change', () => {
+ $('upload-file').addEventListener('change', async () => {
   const selected = $('upload-file').files && $('upload-file').files[0];
-  $('upload-status').textContent = selected
-   ? 'Выбран файл: ' + (selected.name || 'без имени') + '. Размер по метаданным браузера: ' + Number(selected.size || 0) + ' байт.'
-   : 'Файл не выбран.';
+  if (!selected) { $('upload-status').textContent = 'Файл не выбран.'; return; }
+  const status = $('upload-status');
+  status.textContent = 'Проверяем содержимое файла…';
+  try {
+   const bytes = await readUploadBytes(selected);
+   status.textContent = bytes.byteLength
+    ? 'Файл прочитан: ' + (selected.name || 'без имени') + ' · фактически ' + bytes.byteLength + ' байт (метаданные: ' + Number(selected.size || 0) + '). Можно загружать.'
+    : 'Android передал браузеру пустой поток для «' + (selected.name || 'без имени') + '». Размер метаданных: ' + Number(selected.size || 0) + ' байт. Выбери файл через системное приложение «Файлы» или пересохрани JSON в память устройства.';
+  } catch (error) {
+   status.textContent = 'Не удалось прочитать файл: ' + (error && error.message ? error.message : 'ошибка чтения');
+  }
  });
  $('upload').addEventListener('click', async () => {
   const file=$('upload-file').files && $('upload-file').files[0], status=$('upload-status');
