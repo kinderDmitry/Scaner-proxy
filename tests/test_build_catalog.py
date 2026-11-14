@@ -199,9 +199,9 @@ class OutputTests(unittest.TestCase):
                 for i in range(3)
             ]
             mod.write_outputs(nodes, site, prefix="scanner")
-            encoded = (site / "sub" / "scanner-1.txt").read_text(encoding="ascii").strip()
+            encoded = (site / "sub" / "scanner-10.txt").read_text(encoding="ascii").strip()
             decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
-            self.assertEqual(sum(line.startswith("socks://") for line in decoded.splitlines()), 2)
+            self.assertEqual(sum(line.startswith("socks://") for line in decoded.splitlines()), 3)
             self.assertIn("Автоподбор", urllib.parse.unquote(decoded))
 
     def test_no_uploaded_json_keeps_previous_catalog_without_failing(self):
