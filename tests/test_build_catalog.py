@@ -167,7 +167,7 @@ class OutputTests(unittest.TestCase):
             mod.write_outputs([good], site)
             text = (site / "sub" / "all.txt").read_text()
             self.assertIn(good["uri"], text)
-            self.assertIn("#profile-update-interval: 6", text)
+            self.assertIn("#profile-update-interval: 1", text)
             data = json.loads((site / "data.json").read_text())
             self.assertEqual(data["total"], 1)
             self.assertEqual(data["protocols"]["SOCKS5"], 1)
