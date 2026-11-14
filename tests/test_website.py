@@ -42,6 +42,17 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("не более 1000 конфигураций", html)
         self.assertIn("file.size", html)
 
+    def test_catalog_fetch_has_absolute_github_pages_fallback(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("https://kinderdmitry.github.io/Scaner-proxy/data.json", html)
+        self.assertIn("Каталог недоступен и по резервному адресу", html)
+
+    def test_upload_accepts_plain_text_proxy_lists(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("accept=".replace("=", "=\".json,.txt,.list,application/json,text/plain\""), html)
+        self.assertIn("TXT-файл должен содержать ссылки", html)
+        self.assertIn("parsed = { configs: lines }", html)
+
     def test_node_cards_show_flag_country_and_city(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("function locationLabel(n)", html)
