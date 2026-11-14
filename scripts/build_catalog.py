@@ -38,6 +38,22 @@ def decode_feed(body: bytes) -> str:
     return text
 
 
+def normalize_socks_uri(value: str) -> str:
+    """Return a HAPP-compatible SOCKS URI with explicit user-info separator."""
+    parsed = urllib.parse.urlsplit(value)
+    username = urllib.parse.unquote(parsed.username or "")
+    password = urllib.parse.unquote(parsed.password or "")
+    user_info = (
+        urllib.parse.quote(username, safe="") + ":" +
+        urllib.parse.quote(password, safe="") + "@"
+        if username or password else "@"
+    )
+    endpoint = parsed.netloc.rsplit("@", 1)[-1]
+    return urllib.parse.urlunsplit((
+        "socks", user_info + endpoint, parsed.path, parsed.query, parsed.fragment
+    ))
+
+
 def parse_link(line: str) -> dict[str, Any] | None:
     value = line.strip().strip("\ufeff")
     if not value or value.startswith(("#", "//")):
@@ -60,17 +76,7 @@ def parse_link(line: str) -> dict[str, Any] | None:
                     "uuid": urllib.parse.unquote(parsed.username), "query": q}
         username = urllib.parse.unquote(parsed.username or "")
         password = urllib.parse.unquote(parsed.password or "")
-        # HAPP SOCKS links must explicitly separate user-info from the endpoint:
-        # socks://user:password@host:port, or socks://@host:port without auth.
-        user_info = (
-            urllib.parse.quote(username, safe="") + ":" +
-            urllib.parse.quote(password, safe="") + "@"
-            if username or password else "@"
-        )
-        endpoint = parsed.netloc.rsplit("@", 1)[-1]
-        normalized_uri = urllib.parse.urlunsplit((
-            "socks", user_info + endpoint, parsed.path, parsed.query, parsed.fragment
-        ))
+        normalized_uri = normalize_socks_uri(value)
         return {"uri": normalized_uri, "protocol": "SOCKS5",
                 "host": parsed.hostname, "port": parsed.port,
                 "name": urllib.parse.unquote(parsed.fragment)[:80] or parsed.hostname,
@@ -356,6 +362,9 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
 
 def subscription_uri(uri: str, label: str) -> str:
     parts = urllib.parse.urlsplit(uri)
+    if parts.scheme.lower() in {"socks", "socks5"}:
+        uri = normalize_socks_uri(uri)
+        parts = urllib.parse.urlsplit(uri)
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, urllib.parse.quote(label, safe="")))
 
 

@@ -215,7 +215,7 @@ class OutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             nodes = [
-                {"uri": f"socks://node{i}.example:1080#node{i}", "protocol": "SOCKS5",
+                {"uri": f"socks://@node{i}.example:1080#node{i}", "protocol": "SOCKS5",
                  "host": f"node{i}.example", "port": 1080, "speedMbps": 20-i}
                 for i in range(3)
             ]
