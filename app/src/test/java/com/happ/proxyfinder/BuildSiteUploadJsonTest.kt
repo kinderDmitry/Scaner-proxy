@@ -49,7 +49,7 @@ class BuildSiteUploadJsonTest {
 
         val json = JSONObject(buildSiteUploadJson(listOf(duplicate, duplicate.copy(id = "same"), unverified, unsupported)))
         assertEquals(1, json.getJSONArray("configs").length())
-        assertEquals(duplicate.rawConfig, json.getJSONArray("configs").getString(0))
+        assertEquals(duplicate.rawConfig, json.getJSONArray("configs").getJSONObject(0).getString("uri"))
     }
 
     @Test
