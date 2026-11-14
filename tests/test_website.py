@@ -24,7 +24,7 @@ class WebsiteScriptTests(unittest.TestCase):
     def test_upload_parser_reports_empty_and_truncated_files_clearly(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("parseUploadFile", html)
-        self.assertIn("Файл пустой", html)
+        self.assertIn("Браузер получил пустое содержимое файла", html)
         self.assertIn("JSON повреждён или обрезан", html)
         self.assertNotIn("JSON.parse(await file.text())", html)
 
