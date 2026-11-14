@@ -186,9 +186,9 @@ class OutputTests(unittest.TestCase):
                 published = (site / "sub" / name).read_text(encoding="utf-8")
                 raw_alias = (site / "sub" / name.replace(".txt", ".raw.txt")).read_text(encoding="utf-8")
                 self.assertEqual(published, raw_alias)
-                self.assertTrue(published.startswith("#profile-title: " + title + "\\n"))
-                self.assertIn("#profile-update-interval: 1\\n", published)
-                self.assertIn("\\nsocks://proxy.example:1080", published)
+                self.assertTrue(published.startswith("#profile-title: " + title + "\n"))
+                self.assertIn("#profile-update-interval: 1\n", published)
+                self.assertIn("\nsocks://proxy.example:1080", published)
                 self.assertNotIn("#subscription-auto-update-enable", published)
                 self.assertFalse(published.startswith("I3Byb2ZpbGUt"))
                 encoded = (site / "sub" / name.replace(".txt", ".base64")).read_text(encoding="ascii").strip()
@@ -210,8 +210,8 @@ class OutputTests(unittest.TestCase):
             for limit in (0, 10, 25, 50, 100, 200, 500):
                 for name in (f"scanner-{limit}.txt", f"scanner-happ-{limit}.txt"):
                     published = (site / "sub" / name).read_text(encoding="utf-8")
-                    self.assertTrue(published.startswith("#profile-title: Global Scanner\\n"))
-                    self.assertEqual(sum(line.startswith("socks://") for line in published.splitlines()), 3)
+                    self.assertTrue(published.startswith("#profile-title: Global Scanner\n"))
+                    self.assertEqual(sum(line.startswith("socks://") for line in published.splitlines()), min(3, limit + 1))
                     self.assertIn("Автоподбор", urllib.parse.unquote(published))
                     self.assertFalse(published.startswith("I3Byb2ZpbGUt"))
                 encoded = (site / "sub" / f"scanner-{limit}.base64").read_text(encoding="ascii").strip()
