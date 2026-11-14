@@ -107,7 +107,7 @@ def fetch_sources(config_path: Path) -> list[tuple[str, str]]:
                 continue
             for raw_line in decode_feed(body).splitlines():
                 line = raw_line.strip()
-                if protocol_hint == "socks5" and re.fullmatch(r"(?:\\d{1,3}\\.){3}\\d{1,3}:\\d{1,5}", line):
+                if protocol_hint == "socks5" and re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}", line):
                     line = "socks5://" + line
                 if line:
                     collected.append((name, line))
