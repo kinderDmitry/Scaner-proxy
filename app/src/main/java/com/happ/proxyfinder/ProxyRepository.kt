@@ -24,6 +24,31 @@ import java.io.FilterInputStream
 import java.io.InputStream
 
 /**
+ * Combines independent GeoIP responses. Country is selected by ISO-code consensus;
+ * city is only shown when multiple providers agree, except for a single-source fallback.
+ */
+internal fun mergeGeoProviderResults(
+    results: List<Triple<String, String, String>?>
+): Triple<String, String, String>? {
+    val valid = results.filterNotNull().filter { it.first.isNotBlank() }
+    if (valid.isEmpty()) return null
+
+    val coded = valid.filter { it.second.length == 2 && it.second.all(Char::isLetter) }
+    val countryGroups = coded.groupBy { it.second.uppercase(Locale.ROOT) }
+    val winningCountry = countryGroups.maxByOrNull { it.value.size }
+    val selected = if (winningCountry != null && winningCountry.value.size >= 2) winningCountry.value else listOf(valid.first())
+    val country = selected.firstOrNull { it.first.isNotBlank() }?.first ?: valid.first().first
+    val code = winningCountry?.key?.takeIf { winningCountry.value.size >= 2 }
+        ?: selected.firstOrNull { it.second.length == 2 }?.second?.uppercase(Locale.ROOT).orEmpty()
+    val cityGroups = selected.filter { it.third.isNotBlank() }
+        .groupBy { it.third.trim().lowercase(Locale.ROOT) }
+    val city = cityGroups.values.maxByOrNull { it.size }?.let { best ->
+        if (best.size >= 2 || selected.size == 1) best.first().third else ""
+    }.orEmpty()
+    return Triple(country, code, city)
+}
+
+/**
  * Public-feed routing for the protocol selector. Generic and mixed feeds may contain
  * SOCKS5/VLESS URIs too; excluding them here silently skipped globally published nodes.
  */
@@ -768,8 +793,7 @@ class ProxyRepository(private val context: Context) {
             }
 
             val encodedIp = java.net.URLEncoder.encode(ip, "UTF-8")
-            // Query independent GeoIP providers concurrently. The first valid response is
-            // preferred; the others provide resilience when one service is rate-limited.
+            // Query four independent GeoIP providers concurrently, then combine their answers.
             val providerResults = coroutineScope {
                 listOf(
                     async {
@@ -779,7 +803,7 @@ class ProxyRepository(private val context: Context) {
                             if (country.isBlank()) return@request null
                             Triple(country,
                                 json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
-                                json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+                                json.optString("city").takeUnless { it == "null" }.orEmpty())
                         }
                     },
                     async {
@@ -788,7 +812,7 @@ class ProxyRepository(private val context: Context) {
                             if (country.isBlank() || json.has("error") && json.optBoolean("error")) return@request null
                             Triple(country,
                                 json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
-                                json.optString("city").takeUnless { it.isBlank() || it == "null" }.orEmpty())
+                                json.optString("city").takeUnless { it == "null" }.orEmpty())
                         }
                     },
                     async {
@@ -798,10 +822,19 @@ class ProxyRepository(private val context: Context) {
                             val country = Locale("", code).getDisplayCountry(Locale.getDefault()).ifBlank { code }
                             Triple(country, code, json.optString("city").takeUnless { it == "null" }.orEmpty())
                         }
+                    },
+                    async {
+                        request("https://ipconfig.is/json/$encodedIp") { json ->
+                            val country = json.optString("country_name").takeUnless { it.isBlank() || it == "null" }.orEmpty()
+                            if (country.isBlank()) return@request null
+                            Triple(country,
+                                json.optString("country_code").takeUnless { it.isBlank() || it == "null" }?.uppercase(Locale.ROOT).orEmpty(),
+                                json.optString("city").takeUnless { it == "null" }.orEmpty())
+                        }
                     }
                 ).awaitAll()
             }
-            return providerResults.firstNotNullOfOrNull { it }
+            return mergeGeoProviderResults(providerResults)
         }
 
         coroutineScope {
