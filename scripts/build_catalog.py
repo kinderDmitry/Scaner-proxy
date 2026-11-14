@@ -402,7 +402,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         if lines:
             body += nl
         encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
-        (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
+        (sub / (filename + ".raw.txt")).write_text(body, encoding="utf-8")
+        (sub / (filename + ".txt")).write_text(encoded_body, encoding="ascii")
         (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
         (sub / (filename + "-happ.txt")).write_text(encoded_body, encoding="ascii")
 
@@ -419,7 +420,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
             body += nl
         filename = f"{all_name}-{limit}"
         encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
-        (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
+        (sub / (filename + ".raw.txt")).write_text(body, encoding="utf-8")
+        (sub / (filename + ".txt")).write_text(encoded_body, encoding="ascii")
         (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
         (sub / (all_name + "-happ-" + str(limit) + ".txt")).write_text(encoded_body, encoding="ascii")
 
