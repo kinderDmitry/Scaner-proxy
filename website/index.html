@@ -17,8 +17,8 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="hero"><div class="eyebrow">Каталог проверенных узлов</div><h1>Прокси, которые<br>прошли проверку.</h1><p>Загрузи JSON вручную. Система проверит туннели и сформирует одну подписку: первым идёт автоподбор самого быстрого узла, затем выбранное количество конфигураций.</p></section>
 <section class="panel" style="padding:18px;margin-bottom:18px">
  <h2 class="section-title">Загрузить JSON в каталог</h2>
- <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,application/json" aria-label="JSON файл"></div>
- <p class="foot" style="text-align:left;margin:0 0 10px">Выбери JSON из приложения («Скачать JSON для сайта»). Поддерживается до 2 МБ и 1000 конфигураций. Для записи в репозиторий потребуется подтвердить вход через GitHub. Содержимое шифруется в браузере до отправки.</p>
+ <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,.txt,.list,application/json,text/plain" aria-label="JSON файл"></div>
+ <p class="foot" style="text-align:left;margin:0 0 10px">Выбери JSON из приложения или TXT со ссылками VLESS/SOCKS5 (по одной на строку). Поддерживается до 2 МБ и 1000 конфигураций. Для записи в репозиторий потребуется подтвердить вход через GitHub. Содержимое шифруется в браузере до отправки.</p>
  <div class="toolbar"><button class="btn primary" id="upload">Авторизоваться и отправить JSON</button></div>
  <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл. Cloudflare не используется.</div>
 </section>
@@ -113,9 +113,20 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
  async function load() {
   $('reload').disabled=true;$('reload').textContent='Загрузка…';
   try {
-   const response=await fetch('./data.json?t='+Date.now(),{cache:'no-store'});
-   if(!response.ok)throw new Error('HTTP '+response.status);
-   const data=await readJsonResponse(response,'Загрузка каталога');nodes=Array.isArray(data.nodes)?data.nodes:[];
+   let data=null, lastFetchError=null;
+   const catalogUrls=[new URL('./data.json',window.location.href).href,'https://kinderdmitry.github.io/Scaner-proxy/data.json'];
+   for(const catalogUrl of [...new Set(catalogUrls)]){
+    try{
+     const separator=catalogUrl.includes('?')?'&':'?';
+     const response=await fetch(catalogUrl+separator+'t='+Date.now(),{cache:'no-store',mode:'cors'});
+     if(!response.ok){lastFetchError=new Error('HTTP '+response.status+' · '+catalogUrl);continue;}
+     const candidate=await readJsonResponse(response,'Загрузка каталога');
+     if(!candidate||typeof candidate!=='object'||!Array.isArray(candidate.nodes))throw new Error('В каталоге отсутствует массив nodes.');
+     data=candidate;break;
+    }catch(error){lastFetchError=error;}
+   }
+   if(!data)throw new Error('Каталог недоступен и по резервному адресу. '+(lastFetchError&&lastFetchError.message?lastFetchError.message:'Проверь подключение и публикацию GitHub Pages.'));
+   nodes=data.nodes;
    $('total').textContent=data.total??nodes.length;$('vless').textContent=data.protocols?.VLESS??0;$('socks').textContent=data.protocols?.SOCKS5??0;
    $('updated').textContent='Последнее обновление: '+(data.updatedAt?new Date(data.updatedAt).toLocaleString('ru-RU'):'нет данных')+' · '+(data.verification||'');
    render();
@@ -241,7 +252,7 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   return bytes || new Uint8Array();
  }
  async function parseUploadFile(file) {
-  if (!file) throw new Error('Сначала выбери JSON-файл.');
+  if (!file) throw new Error('Сначала выбери JSON- или TXT-файл.');
   let bytes;
   try { bytes = await readUploadBytes(file); }
   catch (error) { throw new Error(error && error.message ? error.message : 'Не удалось прочитать выбранный файл.'); }
@@ -254,17 +265,23 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   try {
    parsed = JSON.parse(source);
   } catch (error) {
-   const match = String(error && error.message || '').match(/position\s+(\d+)/i);
-   let location = '';
-   if (match) {
-    const offset = Math.min(Number(match[1]), source.length);
-    const before = source.slice(0, offset);
-    location = ' Строка ' + (before.split('\n').length) + ', столбец ' + (offset - before.lastIndexOf('\n')) + '.';
+   const lines=source.split(/\r?\n/).map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'));
+   const proxyLines=lines.filter(line=>/^(?:vless|socks5?|socks):\/\//i.test(line));
+   if(proxyLines.length===lines.length&&proxyLines.length>0){
+    parsed = { configs: lines };
+   }else{
+    const match = String(error && error.message || '').match(/position\s+(\d+)/i);
+    let location = '';
+    if (match) {
+     const offset = Math.min(Number(match[1]), source.length);
+     const before = source.slice(0, offset);
+     location = ' Строка ' + (before.split('\n').length) + ', столбец ' + (offset - before.lastIndexOf('\n')) + '.';
+    }
+    const detail = /unexpected end/i.test(String(error && error.message || ''))
+     ? 'JSON повреждён или обрезан.'
+     : 'В файле синтаксическая ошибка JSON.';
+    throw new Error(detail + location + ' TXT-файл должен содержать ссылки vless://, socks:// или socks5:// по одной на строку. Пересохрани файл и попробуй снова.');
    }
-   const detail = /unexpected end/i.test(String(error && error.message || ''))
-    ? 'JSON повреждён или обрезан.'
-    : 'В файле синтаксическая ошибка JSON.';
-   throw new Error(detail + location + ' Пересохрани JSON из приложения и попробуй снова.');
   }
   const configs = Array.isArray(parsed) ? parsed : parsed && parsed.configs;
   if (!Array.isArray(configs) || configs.length < 1) throw new Error('В JSON не найден массив configs с конфигурациями.');
@@ -287,7 +304,7 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
  });
  $('upload').addEventListener('click', async () => {
   const file=$('upload-file').files && $('upload-file').files[0], status=$('upload-status');
-  if(!file){status.textContent='Сначала выбери JSON-файл из приложения.';return;}
+  if(!file){status.textContent='Сначала выбери JSON- или TXT-файл.';return;}
   if(Number(file.size||0)>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ по метаданным.';return;}
   $('upload').disabled=true;
   try {
