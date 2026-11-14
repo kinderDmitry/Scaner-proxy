@@ -1,5 +1,6 @@
 import base64
 import importlib.util
+import io
 import json
 import os
 import tempfile
@@ -94,6 +95,18 @@ class FeedParsingTests(unittest.TestCase):
         self.assertTrue(mod.validate_source_url("https://raw.githubusercontent.com/u/r/main/list.txt"))
         self.assertFalse(mod.validate_source_url("https://example.com/list.txt"))
         self.assertFalse(mod.validate_source_url("http://raw.githubusercontent.com/u/r/main/list.txt"))
+
+    def test_socks5_feed_protocol_hint_normalizes_address_only_rows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "sources.json"
+            path.write_text(json.dumps({"sources": [{
+                "name": "SOCKS5 public list",
+                "url": "https://raw.githubusercontent.com/example/list/main/socks5.txt",
+                "protocol": "socks5"
+            }]}), encoding="utf-8")
+            with patch.object(mod.urllib.request, "urlopen", return_value=io.BytesIO(b"8.8.8.8:1080\\n")):
+                records = mod.fetch_sources(path)
+        self.assertEqual(records, [("SOCKS5 public list", "socks5://8.8.8.8:1080")])
 
 
 class GeoTests(unittest.TestCase):
