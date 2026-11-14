@@ -165,7 +165,7 @@ class OutputTests(unittest.TestCase):
                     "test": "HTTPS 204 через туннель", "verified": True,
                     "services": {"YouTube": {"ok": True, "status": 204}, "Instagram": {"ok": False, "status": 403}}}
             mod.write_outputs([good], site)
-            text = (site / "sub" / "all.txt").read_text()
+            text = (site / "sub" / "all.raw.txt").read_text()
             self.assertIn(good["uri"], text)
             self.assertIn("#profile-update-interval: 1", text)
             data = json.loads((site / "data.json").read_text())
@@ -180,8 +180,8 @@ class OutputTests(unittest.TestCase):
             node = {"uri": "socks://proxy.example:1080#Auto", "protocol": "SOCKS5",
                     "host": "proxy.example", "port": 1080, "speedMbps": 10.0}
             mod.write_outputs([node], site)
-            for name, title in (("all-happ.txt", "JSON Upload"),
-                                ("scanner-happ.txt", "Global Scanner")):
+            for name, title in (("all.txt", "JSON Upload"),
+                                ("scanner.txt", "Global Scanner")):
                 encoded = (site / "sub" / name).read_text(encoding="ascii").strip()
                 decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
                 self.assertIn("#profile-title: " + title, decoded)
@@ -198,7 +198,7 @@ class OutputTests(unittest.TestCase):
                 for i in range(3)
             ]
             mod.write_outputs(nodes, site, prefix="scanner")
-            encoded = (site / "sub" / "scanner-happ-1.txt").read_text(encoding="ascii").strip()
+            encoded = (site / "sub" / "scanner-1.txt").read_text(encoding="ascii").strip()
             decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
             self.assertEqual(sum(line.startswith("socks://") for line in decoded.splitlines()), 2)
             self.assertIn("Автоподбор", urllib.parse.unquote(decoded))
@@ -248,7 +248,7 @@ class OutputTests(unittest.TestCase):
             ]
             mod.write_outputs(nodes, site)
             for limit in (0, 10, 25, 50, 100, 200, 500):
-                lines = [line for line in (site / "sub" / f"all-{limit}.txt").read_text().splitlines()
+                lines = [line for line in (site / "sub" / f"all-{limit}.raw.txt").read_text().splitlines()
                          if line.startswith("socks://")]
                 self.assertEqual(len(lines), min(30, limit + 1))
                 self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
@@ -322,7 +322,7 @@ class OutputTests(unittest.TestCase):
                  "country": "Japan", "countryCode": "JP", "city": "Tokyo"},
             ]
             mod.write_outputs(nodes, site, prefix="scanner")
-            lines = [line for line in (site / "sub" / "scanner.txt").read_text().splitlines()
+            lines = [line for line in (site / "sub" / "scanner.raw.txt").read_text().splitlines()
                      if line.startswith("socks://")]
             self.assertEqual(len(lines), 2)
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
