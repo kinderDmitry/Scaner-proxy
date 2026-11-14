@@ -28,6 +28,19 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(item["protocol"], "SOCKS5")
         self.assertTrue(item["uri"].startswith("socks://"))
         self.assertEqual(item["password"], "p@ss")
+        self.assertEqual(item["uri"], "socks://user:p%40ss@example.com:1080#Frankfurt")
+
+    def test_normalizes_socks_without_auth_to_explicit_empty_userinfo(self):
+        item = mod.parse_link("socks5://192.0.2.10:1080#NoAuth")
+        self.assertEqual(item["uri"], "socks://@192.0.2.10:1080#NoAuth")
+        self.assertEqual(item["username"], "")
+        self.assertEqual(item["password"], "")
+
+    def test_normalizes_socks_with_auth_to_username_password_at_host(self):
+        item = mod.parse_link("socks://alice:p%40ss@192.0.2.10:1080")
+        self.assertEqual(item["uri"], "socks://alice:p%40ss@192.0.2.10:1080")
+        self.assertEqual(item["username"], "alice")
+        self.assertEqual(item["password"], "p@ss")
 
     def test_rejects_unsupported_or_malformed_links(self):
         self.assertIsNone(mod.parse_link("vmess://abc"))
@@ -177,7 +190,7 @@ class OutputTests(unittest.TestCase):
     def test_happ_subscription_urls_serve_plain_utf8_text_with_supported_uri_lines(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
-            node = {"uri": "socks://proxy.example:1080#Auto", "protocol": "SOCKS5",
+            node = {"uri": "socks://@proxy.example:1080#Auto", "protocol": "SOCKS5",
                     "host": "proxy.example", "port": 1080, "speedMbps": 10.0}
             mod.write_outputs([node], site)
             mod.write_outputs([node], site, prefix="scanner")
@@ -188,7 +201,7 @@ class OutputTests(unittest.TestCase):
                 self.assertEqual(published, raw_alias)
                 self.assertTrue(published.startswith("#profile-title: " + title + "\n"))
                 self.assertIn("#profile-update-interval: 1\n", published)
-                self.assertIn("\nsocks://proxy.example:1080", published)
+                self.assertIn("\nsocks://@proxy.example:1080", published)
                 self.assertNotIn("#subscription-auto-update-enable", published)
                 self.assertFalse(published.startswith("I3Byb2ZpbGUt"))
                 encoded = (site / "sub" / name.replace(".txt", ".base64")).read_text(encoding="ascii").strip()
@@ -236,20 +249,20 @@ class OutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             nodes = [
-                {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example", "port": 1080,
+                {"uri": "socks://@slow.example:1080", "protocol": "SOCKS5", "host": "slow.example", "port": 1080,
                  "speedMbps": 3.0, "latencyMs": 30, "country": "Germany", "countryCode": "DE", "city": "Berlin"},
-                {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example", "port": 1080,
+                {"uri": "socks://@fast.example:1080", "protocol": "SOCKS5", "host": "fast.example", "port": 1080,
                  "speedMbps": 30.0, "latencyMs": 80, "country": "France", "countryCode": "FR", "city": "Paris"},
-                {"uri": "socks://mid.example:1080", "protocol": "SOCKS5", "host": "mid.example", "port": 1080,
+                {"uri": "socks://@mid.example:1080", "protocol": "SOCKS5", "host": "mid.example", "port": 1080,
                  "speedMbps": 12.0, "latencyMs": 50, "country": "Netherlands", "countryCode": "NL", "city": "Amsterdam"},
             ]
             mod.write_outputs(nodes, site)
             lines = [line for line in (site / "sub" / "all.raw.txt").read_text().splitlines() if line.startswith("socks://")]
-            self.assertTrue(lines[0].startswith("socks://fast.example:1080"))
+            self.assertTrue(lines[0].startswith("socks://@fast.example:1080"))
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
-            self.assertTrue(lines[1].startswith("socks://mid.example:1080"))
+            self.assertTrue(lines[1].startswith("socks://@mid.example:1080"))
             self.assertIn("🇳🇱 Netherlands — Amsterdam", urllib.parse.unquote(lines[1]))
-            self.assertTrue(lines[2].startswith("socks://slow.example:1080"))
+            self.assertTrue(lines[2].startswith("socks://@slow.example:1080"))
             self.assertIn("🇩🇪 Germany — Berlin", urllib.parse.unquote(lines[2]))
 
     def test_static_subscription_limits_always_keep_auto_pick_first(self):
@@ -267,29 +280,29 @@ class OutputTests(unittest.TestCase):
                          if line.startswith("socks://")]
                 self.assertEqual(len(lines), min(30, limit + 1))
                 self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
-                self.assertTrue(lines[0].startswith("socks://node0.example:1080"))
+                self.assertTrue(lines[0].startswith("socks://@node0.example:1080"))
 
     def test_duplicate_geo_labels_receive_unique_suffixes(self):
         nodes = [
-            {"uri": "socks://first.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
-            {"uri": "socks://second.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
-            {"uri": "socks://third.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+            {"uri": "socks://@first.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+            {"uri": "socks://@second.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
+            {"uri": "socks://@third.example:1080", "country": "Germany", "countryCode": "DE", "city": "Berlin"},
         ]
         labels = [urllib.parse.unquote(line.rsplit("#", 1)[1]) for line in mod.subscription_lines(nodes)]
         self.assertEqual(labels[1:], ["🇩🇪 Germany — Berlin · 1", "🇩🇪 Germany — Berlin · 2"])
 
     def test_unknown_geo_is_explicit(self):
-        node = {"uri": "socks://unknown.example:1080", "country": "", "countryCode": "", "city": ""}
-        label = urllib.parse.unquote(mod.subscription_lines([{"uri": "socks://auto.example:1080"}, node])[1].rsplit("#", 1)[1])
+        node = {"uri": "socks://@unknown.example:1080", "country": "", "countryCode": "", "city": ""}
+        label = urllib.parse.unquote(mod.subscription_lines([{"uri": "socks://@auto.example:1080"}, node])[1].rsplit("#", 1)[1])
         self.assertEqual(label, "❗ Неизвестная геолокация")
 
     def test_outputs_are_sorted_by_measured_speed(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
-            slower = {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
+            slower = {"uri": "socks://@slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
                       "port": 1080, "name": "slow", "checkedAt": "2026-01-01", "test": "HTTPS",
                       "speedMbps": 4.0, "latencyMs": 90}
-            faster = {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example",
+            faster = {"uri": "socks://@fast.example:1080", "protocol": "SOCKS5", "host": "fast.example",
                       "port": 1080, "name": "fast", "checkedAt": "2026-01-01", "test": "HTTPS",
                       "speedMbps": 40.0, "latencyMs": 120}
             mod.write_outputs([slower, faster], site)
@@ -329,10 +342,10 @@ class OutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             nodes = [
-                {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example",
+                {"uri": "socks://@fast.example:1080", "protocol": "SOCKS5", "host": "fast.example",
                  "port": 1080, "speedMbps": 25.0, "latencyMs": 40,
                  "country": "Germany", "countryCode": "DE", "city": "Frankfurt am Main"},
-                {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
+                {"uri": "socks://@slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
                  "port": 1080, "speedMbps": 4.0, "latencyMs": 120,
                  "country": "Japan", "countryCode": "JP", "city": "Tokyo"},
             ]

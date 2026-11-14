@@ -1,3 +1,10 @@
+## [1.11.2] - 2026-11-14
+
+### Fixed
+- Normalize every SOCKS5 link for HAPP: authenticated links use `socks://username:password@host:port`, and unauthenticated links use `socks://@host:port`.
+- Apply the same canonical format to uploaded JSON, public scanner feeds, displayed/copyable node URIs, and every generated subscription variant.
+- Document both accepted SOCKS5 formats directly beside the website upload control and add regression tests.
+
 ## [1.11.1] - 2026-11-14
 
 ### Fixed

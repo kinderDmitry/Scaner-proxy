@@ -58,11 +58,23 @@ def parse_link(line: str) -> dict[str, Any] | None:
             return {"uri": value, "protocol": "VLESS", "host": parsed.hostname, "port": parsed.port,
                     "name": urllib.parse.unquote(parsed.fragment)[:80] or parsed.hostname,
                     "uuid": urllib.parse.unquote(parsed.username), "query": q}
-        return {"uri": "socks://" + value.split("://", 1)[1], "protocol": "SOCKS5",
+        username = urllib.parse.unquote(parsed.username or "")
+        password = urllib.parse.unquote(parsed.password or "")
+        # HAPP SOCKS links must explicitly separate user-info from the endpoint:
+        # socks://user:password@host:port, or socks://@host:port without auth.
+        user_info = (
+            urllib.parse.quote(username, safe="") + ":" +
+            urllib.parse.quote(password, safe="") + "@"
+            if username or password else "@"
+        )
+        endpoint = parsed.netloc.rsplit("@", 1)[-1]
+        normalized_uri = urllib.parse.urlunsplit((
+            "socks", user_info + endpoint, parsed.path, parsed.query, parsed.fragment
+        ))
+        return {"uri": normalized_uri, "protocol": "SOCKS5",
                 "host": parsed.hostname, "port": parsed.port,
                 "name": urllib.parse.unquote(parsed.fragment)[:80] or parsed.hostname,
-                "username": urllib.parse.unquote(parsed.username or ""),
-                "password": urllib.parse.unquote(parsed.password or "")}
+                "username": username, "password": password}
     except (ValueError, UnicodeError):
         return None
 
