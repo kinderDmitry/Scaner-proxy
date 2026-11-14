@@ -42,6 +42,13 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("не более 1000 конфигураций", html)
         self.assertIn("file.size", html)
 
+    def test_upload_supports_pasted_json_when_android_file_picker_returns_zero_bytes(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="upload-text"', html)
+        self.assertIn("function parseUploadText(raw)", html)
+        self.assertIn("Вставь содержимое JSON в резервное поле ниже", html)
+        self.assertIn("if(pasted.trim()) parsedResult=parseUploadText(pasted)", html)
+
     def test_catalog_fetch_has_absolute_github_pages_fallback(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("https://kinderdmitry.github.io/Scaner-proxy/data.json", html)
