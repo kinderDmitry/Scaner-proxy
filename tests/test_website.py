@@ -24,7 +24,7 @@ class WebsiteScriptTests(unittest.TestCase):
 
     def test_subscription_limit_selects_static_variant(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("all-happ-' + limit + '.txt", html)
+        self.assertIn("all-' + limit + '.txt", html)
         self.assertIn("for limit in (0, 10, 25, 50, 100, 200, 500)", (ROOT / "scripts" / "build_catalog.py").read_text(encoding="utf-8"))
 
     def test_upload_parser_reports_empty_and_truncated_files_clearly(self):
@@ -90,16 +90,16 @@ class WebsiteScriptTests(unittest.TestCase):
     def test_homepage_exposes_two_independent_happ_subscriptions(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         self.assertIn("Подписка из загруженного JSON", html)
-        self.assertIn("sub/all-happ.txt", html)
-        self.assertIn("./sub/scanner-happ.txt", html)
+        self.assertIn("sub/all.txt", html)
+        self.assertIn("./sub/scanner.txt", html)
         self.assertIn("./scanner.html", html)
 
     def test_public_scanner_page_shows_geo_filters_and_own_subscription(self):
         html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
         self.assertIn("data-scanner.json", html)
-        self.assertIn("sub/scanner-happ.txt", html)
         self.assertIn("sub/scanner.txt", html)
-        self.assertIn("scanner-happ-'+value+'.txt", html)
+        self.assertIn("sub/scanner.txt", html)
+        self.assertIn("scanner-'+value+'.txt", html)
         self.assertIn("countryCode", html)
         self.assertIn("country", html)
         self.assertIn("city", html)
