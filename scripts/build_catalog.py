@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "website"
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_CANDIDATES = 1000
+MAX_SCANNER_CANDIDATES = 300
+MAX_SCANNER_PER_SOURCE = 50
 MAX_PUBLISHED = 1000
 ALLOWED_SOURCE_HOSTS = {"raw.githubusercontent.com"}
 SUPPORTED = {"vless", "socks", "socks5"}
@@ -438,12 +440,13 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
 
 
 def verify_records(raw: list[tuple[str, str, dict[str, str]]], sing_box: str,
-                   workers: int = 8) -> tuple[int, list[dict[str, Any]]]:
+                   workers: int = 8, max_candidates: int = MAX_CANDIDATES,
+                   per_source_limit: int = 200) -> tuple[int, list[dict[str, Any]]]:
     """Parse and verify one source family without mixing it with another."""
     candidates: dict[str, dict[str, Any]] = {}
     per_source: dict[str, int] = {}
     for source_name, line, geo_metadata in raw:
-        if per_source.get(source_name, 0) >= 200:
+        if per_source.get(source_name, 0) >= per_source_limit:
             continue
         item = parse_link(line)
         if not item:
@@ -454,7 +457,7 @@ def verify_records(raw: list[tuple[str, str, dict[str, str]]], sing_box: str,
                 item[field] = geo_metadata[field]
         candidates.setdefault(item["uri"], item)
         per_source[source_name] = per_source.get(source_name, 0) + 1
-        if len(candidates) >= MAX_CANDIDATES:
+        if len(candidates) >= max_candidates:
             break
 
     items = list(candidates.values())
@@ -486,7 +489,11 @@ def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int 
         ("scanner", public_raw, site_dir / "data-scanner.json", "public scanner"),
     )
     for prefix, raw, existing_catalog, label in catalogs:
-        candidate_count, verified = verify_records(raw, sing_box, workers)
+        candidate_count, verified = verify_records(
+            raw, sing_box, workers,
+            max_candidates=MAX_SCANNER_CANDIDATES if prefix else MAX_CANDIDATES,
+            per_source_limit=MAX_SCANNER_PER_SOURCE if prefix else 200,
+        )
         totals["candidates"] += candidate_count
         totals["verified"] += len(verified)
         if not candidate_count:
