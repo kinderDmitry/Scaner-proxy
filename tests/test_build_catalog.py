@@ -104,7 +104,7 @@ class FeedParsingTests(unittest.TestCase):
                 "url": "https://raw.githubusercontent.com/example/list/main/socks5.txt",
                 "protocol": "socks5"
             }]}), encoding="utf-8")
-            with patch.object(mod.urllib.request, "urlopen", return_value=io.BytesIO(b"8.8.8.8:1080\\n")):
+            with patch.object(mod.urllib.request, "urlopen", return_value=io.BytesIO(b"8.8.8.8:1080\n")):
                 records = mod.fetch_sources(path)
         self.assertEqual(records, [("SOCKS5 public list", "socks5://8.8.8.8:1080")])
 
