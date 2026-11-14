@@ -5,6 +5,7 @@
 - Global scanner page with search by country, city, endpoint, protocol and source.
 - Public SOCKS5 feed sources from ProxyScrape and Thordata, alongside the existing VLESS feeds; address-only SOCKS5 rows are normalized using the source protocol declaration.
 - Independent fastest-node Auto Pick and fixed-size subscription variants for both catalogs.
+- HAPP automatic subscription refresh and update-on-open directives in both subscription feeds.
 
 ### Changed
 - Catalog builder now fetches and verifies public feeds as a separate source family; uploaded JSON is no longer mixed into scanner results.
