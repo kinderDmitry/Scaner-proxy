@@ -365,62 +365,96 @@ def subscription_lines(nodes: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
-def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None:
+def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix: str = "") -> None:
+    """Write one isolated catalog and its HAPP-compatible text subscriptions."""
     sub = site_dir / "sub"
     sub.mkdir(parents=True, exist_ok=True)
     nl = chr(10)
-    verified = sorted(verified, key=lambda x: (-float(x.get("speedMbps") or 0), int(x.get("latencyMs") or 2147483647), x["host"]))
-    groups = {"all": verified, "vless": [x for x in verified if x["protocol"] == "VLESS"],
-              "socks5": [x for x in verified if x["protocol"] == "SOCKS5"]}
+    prefix = re.sub(r"[^a-z0-9-]", "", prefix.lower()).strip("-")
+    verified = sorted(
+        verified,
+        key=lambda x: (-float(x.get("speedMbps") or 0),
+                       int(x.get("latencyMs") or 2147483647), x["host"])
+    )
+    groups = {
+        "all": verified,
+        "vless": [x for x in verified if x["protocol"] == "VLESS"],
+        "socks5": [x for x in verified if x["protocol"] == "SOCKS5"],
+    }
+    all_name = prefix or "all"
     for key, nodes in groups.items():
+        filename = all_name if key == "all" else (f"{prefix}-{key}" if prefix else key)
         lines = subscription_lines(nodes) if key == "all" else [x["uri"] for x in nodes]
-        body = nl.join(["#profile-title: Scaner Proxy X", "#profile-update-interval: 6",
-                        "# Scaner Proxy X — проверено через HTTPS-туннель"] + lines)
+        body = nl.join([
+            f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
+            "#profile-update-interval: 6",
+        ] + lines)
         if lines:
             body += nl
-        (sub / (key + ".txt")).write_text(body, encoding="utf-8")
-        (sub / (key + ".base64")).write_text(base64.b64encode(body.encode()).decode() + nl, encoding="ascii")
-    # Static Pages cannot apply a query-string limit. Publish fixed-size variants instead.
+        (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
+        (sub / (filename + ".base64")).write_text(
+            base64.b64encode(body.encode()).decode() + nl, encoding="ascii"
+        )
+
+    # GitHub Pages is static: publish fixed-size variants with auto-pick always first.
     all_lines = subscription_lines(verified)
     for limit in (0, 10, 25, 50, 100, 200, 500):
         selected = all_lines[:1 + limit] if all_lines else []
-        body = nl.join(["#profile-title: Scaner Proxy X", "#profile-update-interval: 6",
-                        "# Scaner Proxy X — проверено через HTTPS-туннель"] + selected)
+        body = nl.join([
+            f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
+            "#profile-update-interval: 6",
+        ] + selected)
         if selected:
             body += nl
-        (sub / ("all-" + str(limit) + ".txt")).write_text(body, encoding="utf-8")
-        (sub / ("all-" + str(limit) + ".base64")).write_text(base64.b64encode(body.encode()).decode() + nl, encoding="ascii")
-    payload = {"updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "total": len(verified), "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
+        filename = f"{all_name}-{limit}"
+        (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
+        (sub / (filename + ".base64")).write_text(
+            base64.b64encode(body.encode()).decode() + nl, encoding="ascii"
+        )
+
+    payload = {
+        "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "total": len(verified),
+        "protocols": {"VLESS": len(groups["vless"]), "SOCKS5": len(groups["socks5"])},
         "verification": "Каждая запись прошла HTTPS-запрос через sing-box; не прошедшие проверку исключены.",
-        "nodes": [{k: x.get(k) for k in ("protocol", "host", "port", "name", "uri", "checkedAt", "test", "country", "countryCode", "city", "latencyMs", "speedMbps", "services")} for x in verified]}
-    (site_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + nl, encoding="utf-8")
+        "nodes": [{
+            k: x.get(k) for k in (
+                "protocol", "host", "port", "name", "uri", "checkedAt", "test",
+                "country", "countryCode", "city", "latencyMs", "speedMbps", "services", "source"
+            )
+        } for x in verified],
+    }
+    data_name = "data" + (("-" + prefix) if prefix else "") + ".json"
+    (site_dir / data_name).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + nl, encoding="utf-8"
+    )
 
 
-
-def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
-    raw = fetch_uploaded()
-    candidates, per_source = {}, {}
+def verify_records(raw: list[tuple[str, str, dict[str, str]]], sing_box: str,
+                   workers: int = 8) -> tuple[int, list[dict[str, Any]]]:
+    """Parse and verify one source family without mixing it with another."""
+    candidates: dict[str, dict[str, Any]] = {}
+    per_source: dict[str, int] = {}
     for source_name, line, geo_metadata in raw:
         if per_source.get(source_name, 0) >= 200:
             continue
         item = parse_link(line)
-        if item:
-            item["source"] = source_name
-            for field in ("country", "countryCode", "city"):
-                if geo_metadata.get(field):
-                    item[field] = geo_metadata[field]
-            candidates.setdefault(item["uri"], item)
-            per_source[source_name] = per_source.get(source_name, 0) + 1
+        if not item:
+            continue
+        item["source"] = source_name
+        for field in ("country", "countryCode", "city"):
+            if geo_metadata.get(field):
+                item[field] = geo_metadata[field]
+        candidates.setdefault(item["uri"], item)
+        per_source[source_name] = per_source.get(source_name, 0) + 1
         if len(candidates) >= MAX_CANDIDATES:
             break
+
     items = list(candidates.values())
     if not items:
-        if not (site_dir / "data.json").exists():
-            write_outputs([], site_dir)
-        print("No uploaded JSON yet; empty catalog generated or existing catalog preserved")
-        return {"candidates": 0, "verified": 0}
-    verified = []
+        return 0, []
+
+    verified: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(test_candidate, item, sing_box) for item in items]
         for future in concurrent.futures.as_completed(futures):
@@ -428,14 +462,40 @@ def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int 
             if result:
                 verified.append(result)
                 if len(verified) >= MAX_PUBLISHED:
-                    for pending in futures: pending.cancel()
+                    for pending in futures:
+                        pending.cancel()
                     break
-    if not verified:
-        raise RuntimeError("No proxy passed real HTTPS tunnel check; previous catalog was preserved")
-    verified.sort(key=lambda x: (x["protocol"], x["host"], x["port"]))
-    write_outputs(verified, site_dir)
-    print("Candidates: " + str(len(items)) + "; verified: " + str(len(verified)))
-    return {"candidates": len(items), "verified": len(verified)}
+    return len(items), verified
+
+
+def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
+    """Build independent uploaded-JSON and public-feed catalogs."""
+    uploaded_raw = fetch_uploaded()
+    public_raw = [(name, line, {}) for name, line in fetch_sources(config_path)]
+
+    totals = {"candidates": 0, "verified": 0}
+    catalogs = (
+        ("", uploaded_raw, site_dir / "data.json", "uploaded JSON"),
+        ("scanner", public_raw, site_dir / "data-scanner.json", "public scanner"),
+    )
+    for prefix, raw, existing_catalog, label in catalogs:
+        candidate_count, verified = verify_records(raw, sing_box, workers)
+        totals["candidates"] += candidate_count
+        totals["verified"] += len(verified)
+        if not candidate_count:
+            if not existing_catalog.exists():
+                write_outputs([], site_dir, prefix=prefix)
+            print(f"No candidates from {label}; previous catalog preserved")
+            continue
+        if not verified:
+            print(f"No {label} candidate passed the HTTPS tunnel check; previous catalog preserved")
+            continue
+        write_outputs(verified, site_dir, prefix=prefix)
+        print(f"{label}: candidates {candidate_count}; verified {len(verified)}")
+
+    print("Total candidates: " + str(totals["candidates"]) +
+          "; total verified: " + str(totals["verified"]))
+    return totals
 
 
 def main() -> None:
