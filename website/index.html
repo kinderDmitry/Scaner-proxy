@@ -174,12 +174,12 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   try {
    parsed = JSON.parse(source);
   } catch (error) {
-   const match = String(error && error.message || '').match(/position\\s+(\\d+)/i);
+   const match = String(error && error.message || '').match(/position\s+(\d+)/i);
    let location = '';
    if (match) {
     const offset = Math.min(Number(match[1]), source.length);
     const before = source.slice(0, offset);
-    location = ' Строка ' + (before.split('\\n').length) + ', столбец ' + (offset - before.lastIndexOf('\\n')) + '.';
+    location = ' Строка ' + (before.split('\n').length) + ', столбец ' + (offset - before.lastIndexOf('\n')) + '.';
    }
    const detail = /unexpected end/i.test(String(error && error.message || ''))
     ? 'JSON повреждён или обрезан.'
