@@ -18,7 +18,9 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="panel" style="padding:18px;margin-bottom:18px">
  <h2 class="section-title">Загрузить JSON в каталог</h2>
  <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,.txt,.list,application/json,text/plain" aria-label="JSON файл"></div>
- <p class="foot" style="text-align:left;margin:0 0 10px">Выбери JSON из приложения или TXT со ссылками VLESS/SOCKS5 (по одной на строку). Поддерживается до 2 МБ и 1000 конфигураций. Для записи в репозиторий потребуется подтвердить вход через GitHub. Содержимое шифруется в браузере до отправки.</p>
+ <label class="foot" for="upload-text" style="display:block;text-align:left;margin:0 0 7px">Резервный способ для Android: если браузер прочитал 0 байт, открой JSON в текстовом редакторе, скопируй всё содержимое и вставь сюда.</label>
+ <textarea id="upload-text" class="search" rows="5" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder='Вставь сюда весь JSON, начиная с {"configs":[...]} или список прокси-ссылок'></textarea>
+ <p class="foot" style="text-align:left;margin:8px 0 10px">Выбери JSON из приложения или TXT со ссылками VLESS/SOCKS5 (по одной на строку). Если выбор файла передаёт пустой поток, можно вставить содержимое напрямую. Лимит 2 МБ и 1000 конфигураций. Для записи в репозиторий потребуется подтвердить вход через GitHub. Содержимое шифруется в браузере до отправки.</p>
  <div class="toolbar"><button class="btn primary" id="upload">Авторизоваться и отправить JSON</button></div>
  <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл. Cloudflare не используется.</div>
 </section>
@@ -251,15 +253,9 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   }
   return bytes || new Uint8Array();
  }
- async function parseUploadFile(file) {
-  if (!file) throw new Error('Сначала выбери JSON- или TXT-файл.');
-  let bytes;
-  try { bytes = await readUploadBytes(file); }
-  catch (error) { throw new Error(error && error.message ? error.message : 'Не удалось прочитать выбранный файл.'); }
-  const actualBytes = bytes.byteLength;
-  if (!actualBytes) throw new Error('Браузер действительно прочитал 0 байт из "' + (file.name || 'без имени') + '". Метаданные размера: ' + Number(file.size || 0) + ' байт. Открой файл через системный «Файлы» и выбери сохранённый JSON повторно.');
-  if (actualBytes > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ (фактически прочитано ' + actualBytes + ' байт).');
-  const raw = new TextDecoder('utf-8').decode(bytes);
+ function parseUploadText(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) throw new Error('Вставленное содержимое пустое. Скопируй весь JSON и вставь его сюда.');
+  if (new TextEncoder().encode(raw).byteLength > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ.');
   const source = raw.charCodeAt(0) === 0xFEFF ? raw.slice(1) : raw;
   let parsed;
   try {
@@ -288,6 +284,16 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   if (configs.length > 1000) throw new Error('В одном файле допускается не более 1000 конфигураций.');
   return { parsed, configs };
  }
+ async function parseUploadFile(file) {
+  if (!file) throw new Error('Сначала выбери JSON- или TXT-файл.');
+  let bytes;
+  try { bytes = await readUploadBytes(file); }
+  catch (error) { throw new Error(error && error.message ? error.message : 'Не удалось прочитать выбранный файл.'); }
+  const actualBytes = bytes.byteLength;
+  if (!actualBytes) throw new Error('Браузер действительно прочитал 0 байт из "' + (file.name || 'без имени') + '". Вставь содержимое JSON в резервное поле ниже.');
+  if (actualBytes > 2 * 1024 * 1024) throw new Error('Файл превышает лимит 2 МБ (фактически прочитано ' + actualBytes + ' байт).');
+  return parseUploadText(new TextDecoder('utf-8').decode(bytes));
+ }
  $('upload-file').addEventListener('change', async () => {
   const selected = $('upload-file').files && $('upload-file').files[0];
   if (!selected) { $('upload-status').textContent = 'Файл не выбран.'; return; }
@@ -303,12 +309,22 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   }
  });
  $('upload').addEventListener('click', async () => {
-  const file=$('upload-file').files && $('upload-file').files[0], status=$('upload-status');
-  if(!file){status.textContent='Сначала выбери JSON- или TXT-файл.';return;}
-  if(Number(file.size||0)>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ по метаданным.';return;}
+  const file=$('upload-file').files && $('upload-file').files[0], pasted=$('upload-text').value, status=$('upload-status');
+  if(!file&&!pasted.trim()){status.textContent='Выбери файл или вставь содержимое JSON в резервное поле.';return;}
+  if(file&&Number(file.size||0)>2*1024*1024){status.textContent='Файл превышает лимит 2 МБ по метаданным.';return;}
   $('upload').disabled=true;
   try {
-   const {parsed,configs}=await parseUploadFile(file);
+   let parsedResult;
+   if(pasted.trim()) parsedResult=parseUploadText(pasted);
+   else {
+    try { parsedResult=await parseUploadFile(file); }
+    catch(error) {
+     const fallback=$('upload-text').value;
+     if(fallback.trim()) parsedResult=parseUploadText(fallback);
+     else throw error;
+    }
+   }
+   const {parsed,configs}=parsedResult;
    if(!githubToken)await githubDeviceLogin(status);
    status.textContent='Шифруем файл в браузере…';
    const envelope=await encryptUpload(parsed);
