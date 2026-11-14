@@ -28,6 +28,7 @@ Never commit the private key to the repository or paste it into the website. Wit
 - **Uploaded JSON:** `https://kinderdmitry.github.io/Scaner-proxy/sub/all.txt` — only configurations uploaded from the Android app or website.
 - **Global public scanner:** `https://kinderdmitry.github.io/Scaner-proxy/sub/scanner.txt` — configurations collected from the public feeds listed in `sources.json`. The searchable dashboard is `https://kinderdmitry.github.io/Scaner-proxy/scanner.html`.
 - Each catalog has its own `data.json` (`data.json` and `data-scanner.json`), its own HAPP subscription, and its own Auto Pick. The fastest verified node is first and labeled **⚡ Автоподбор**; subsequent nodes carry the flag, country, and city.
+- HAPP auto-update is enabled in the subscription body (including update-on-open); the site itself refreshes the published catalogs on its five-minute GitHub Actions schedule.
 - GitHub Actions refreshes both catalogs on a five-minute schedule. GitHub may delay scheduled starts; it is not an exact five-minute SLA.
 - The SOCKS5 feed can declare its protocol when rows contain plain `IP:PORT` values; these are normalized to `socks5://` before parsing. Public discovery reads published configuration feeds only. It does not sweep arbitrary third-party IP ranges or scan networks without authorization.
 - Only VLESS and SOCKS5 links are accepted. Hosts resolving to private, loopback, link-local, multicast, or otherwise non-global addresses are rejected.
