@@ -343,5 +343,22 @@ class OutputTests(unittest.TestCase):
         self.assertEqual({item["source"] for item in verified}, {"feed-a", "feed-b"})
 
 
+    def test_first_scanner_run_publishes_valid_empty_files_when_no_proxy_passes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sources = root / "sources.json"
+            sources.write_text('{"sources":[]}', encoding="utf-8")
+            site = root / "site"
+            with (
+                patch.object(mod, "fetch_uploaded", return_value=[]),
+                patch.object(mod, "fetch_sources", return_value=[("Public feed", "socks5://dead.example:1080")]),
+                patch.object(mod, "test_candidate", return_value=None),
+            ):
+                result = mod.build(sources, "unused-sing-box", site)
+            self.assertEqual(result, {"candidates": 1, "verified": 0})
+            self.assertEqual(json.loads((site / "data-scanner.json").read_text())["total"], 0)
+            self.assertTrue((site / "sub" / "scanner.txt").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
