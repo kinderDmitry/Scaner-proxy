@@ -94,6 +94,7 @@ def fetch_sources(config_path: Path) -> list[tuple[str, str]]:
     collected = []
     for source in config.get("sources", []):
         name, url = str(source.get("name", "Public feed")), str(source.get("url", ""))
+        protocol_hint = str(source.get("protocol") or "").strip().lower()
         if not validate_source_url(url):
             print("Skipping non-whitelisted source: " + name)
             continue
@@ -102,8 +103,14 @@ def fetch_sources(config_path: Path) -> list[tuple[str, str]]:
             with urllib.request.urlopen(request, timeout=15) as response:
                 body = response.read(MAX_SOURCE_BYTES + 1)
             if len(body) > MAX_SOURCE_BYTES:
+                print("Source is larger than the configured limit: " + name)
                 continue
-            collected.extend((name, line) for line in decode_feed(body).splitlines())
+            for raw_line in decode_feed(body).splitlines():
+                line = raw_line.strip()
+                if protocol_hint == "socks5" and re.fullmatch(r"(?:\\d{1,3}\\.){3}\\d{1,3}:\\d{1,5}", line):
+                    line = "socks5://" + line
+                if line:
+                    collected.append((name, line))
         except (OSError, urllib.error.URLError, TimeoutError) as exc:
             print("Source unavailable: " + name + ": " + str(exc))
     return collected
