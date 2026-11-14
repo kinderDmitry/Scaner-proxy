@@ -421,7 +421,7 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
         (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
         (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
-        (sub / (filename + "-happ.txt")).write_text(encoded_body, encoding="ascii")
+        (sub / (all_name + "-happ-" + str(limit) + ".txt")).write_text(encoded_body, encoding="ascii")
 
     payload = {
         "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
