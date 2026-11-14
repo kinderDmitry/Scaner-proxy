@@ -268,5 +268,50 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(current.read_text(), "previous-good-catalog")
 
 
+    def test_scanner_catalog_uses_independent_subscription_and_data_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            site = Path(temp)
+            nodes = [
+                {"uri": "socks://fast.example:1080", "protocol": "SOCKS5", "host": "fast.example",
+                 "port": 1080, "speedMbps": 25.0, "latencyMs": 40,
+                 "country": "Germany", "countryCode": "DE", "city": "Frankfurt am Main"},
+                {"uri": "socks://slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
+                 "port": 1080, "speedMbps": 4.0, "latencyMs": 120,
+                 "country": "Japan", "countryCode": "JP", "city": "Tokyo"},
+            ]
+            mod.write_outputs(nodes, site, prefix="scanner")
+            lines = [line for line in (site / "sub" / "scanner.txt").read_text().splitlines()
+                     if line.startswith("socks://")]
+            self.assertEqual(len(lines), 2)
+            self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
+            self.assertIn("🇯🇵 Japan — Tokyo", urllib.parse.unquote(lines[1]))
+            self.assertEqual(json.loads((site / "data-scanner.json").read_text())["total"], 2)
+            self.assertTrue((site / "sub" / "scanner-10.txt").exists())
+
+    def test_build_collects_public_feeds_into_separate_scanner_subscription(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sources = root / "sources.json"
+            sources.write_text('{"sources":[]}', encoding="utf-8")
+            site = root / "site"
+            def verify(item, _sing_box):
+                item.update({"country": "Germany", "countryCode": "DE", "city": "Berlin",
+                             "latencyMs": 35, "speedMbps": 12.5, "checkedAt": "2026-11-14T00:00:00+00:00",
+                             "services": {}, "verified": True})
+                return item
+            with patch.object(mod, "fetch_uploaded", return_value=[]), \\
+                 patch.object(mod, "fetch_sources", return_value=[("Public feed", "socks5://scanner.example:1080")]), \\
+                 patch.object(mod, "test_candidate", side_effect=verify):
+                result = mod.build(sources, "unused-sing-box", site)
+            self.assertEqual(result, {"candidates": 1, "verified": 1})
+            self.assertEqual(json.loads((site / "data.json").read_text())["total"], 0)
+            self.assertEqual(json.loads((site / "data-scanner.json").read_text())["total"], 1)
+            scanner_lines = [line for line in (site / "sub" / "scanner.txt").read_text().splitlines()
+                             if line.startswith("socks://")]
+            self.assertEqual(len(scanner_lines), 1)
+            self.assertIn("Автоподбор", urllib.parse.unquote(scanner_lines[0]))
+            self.assertTrue((site / "sub" / "all.txt").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
