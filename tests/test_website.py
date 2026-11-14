@@ -75,15 +75,16 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("Геолокация не определена", html)
 
     def test_inline_javascript_is_valid(self):
-        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
-        self.assertTrue(scripts, "website must contain its application script")
-        for script in scripts:
-            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as source:
-                source.write(script)
-                source.flush()
-                result = subprocess.run(["node", "--check", source.name], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
+        for page in ("index.html", "scanner.html"):
+            html = (ROOT / "website" / page).read_text(encoding="utf-8")
+            scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
+            self.assertTrue(scripts, page + " must contain its application script")
+            for script in scripts:
+                with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as source:
+                    source.write(script)
+                    source.flush()
+                    result = subprocess.run(["node", "--check", source.name], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, page + ": " + result.stderr)
 
 
     def test_homepage_exposes_two_independent_happ_subscriptions(self):
