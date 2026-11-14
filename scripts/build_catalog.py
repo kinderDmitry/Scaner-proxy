@@ -503,6 +503,8 @@ def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int 
             continue
         if not verified:
             print(f"No {label} candidate passed the HTTPS tunnel check; previous catalog preserved")
+            if not existing_catalog.exists():
+                write_outputs([], site_dir, prefix=prefix)
             continue
         write_outputs(verified, site_dir, prefix=prefix)
         print(f"{label}: candidates {candidate_count}; verified {len(verified)}")
