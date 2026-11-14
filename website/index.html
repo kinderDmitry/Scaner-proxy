@@ -29,12 +29,12 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
 <section class="stats" aria-label="Статистика"><div class="stat"><label>Рабочих конфигураций</label><strong class="cyan" id="total">—</strong></div><div class="stat"><label>VLESS</label><strong id="vless">—</strong></div><div class="stat"><label>SOCKS5</label><strong id="socks">—</strong></div></section>
 <h2 class="section-title">Подписки для приложений</h2>
 <section class="subs">
-<article class="sub panel" style="grid-column:1/-1"><div class="sub-head"><div class="sub-icon">⌁</div><h3>Подписка из загруженного JSON · HAPP / Hiddify</h3></div><p>Отдельный каталог из JSON, который ты загружаешь вверху страницы. Первый узел — ⚡ Автоподбор, затем остальные проверенные конфигурации.</p><div class="url" id="subscription-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="subscription-url">Скопировать ссылку</button><a class="btn" id="open-subscription" href="./sub/all.txt" target="_blank" rel="noopener">Открыть список</a></div></article>
+<article class="sub panel" style="grid-column:1/-1"><div class="sub-head"><div class="sub-icon">⌁</div><h3>Подписка из загруженного JSON · HAPP / Hiddify</h3></div><p>Отдельный каталог из JSON, который ты загружаешь вверху страницы. Первый узел — ⚡ Автоподбор, затем остальные проверенные конфигурации.</p><div class="url" id="subscription-url">Загрузка адреса…</div><div class="actions"><button class="btn primary" data-copy-url="subscription-url">Скопировать ссылку</button><a class="btn" id="open-subscription" href="./sub/all-happ.txt" target="_blank" rel="noopener">Открыть HAPP-подписку</a></div></article>
 <article class="sub panel">
  <div class="sub-head"><div class="sub-icon">🌐</div><h3>Глобальный сканер публичных источников</h3></div>
  <p>Отдельный каталог, который автоматически собирается из открытых публичных лент по всему миру. Проверенные узлы с флагом, страной и городом. Обновление каждые 5 минут по расписанию GitHub Actions.</p>
- <div class="url">https://kinderdmitry.github.io/Scaner-proxy/sub/scanner.txt</div>
- <div class="actions"><a class="btn primary" href="./scanner.html">Открыть сканер</a><a class="btn" href="./sub/scanner.txt" target="_blank" rel="noopener">Подписка HAPP</a></div>
+ <div class="url">https://kinderdmitry.github.io/Scaner-proxy/sub/scanner-happ.txt</div>
+ <div class="actions"><a class="btn primary" href="./scanner.html">Открыть сканер</a><a class="btn" href="./sub/scanner-happ.txt" target="_blank" rel="noopener">Подписка HAPP</a></div>
 </article>
 </section>
 <div class="list-head"><h2 class="section-title" style="margin:0">Проверенные узлы</h2><span class="count" id="visible-count">Загрузка…</span></div>
@@ -70,7 +70,7 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
  const defaultSubscription = new URL('sub/all.txt', new URL('.', window.location.href)).href;
  function updateSubscription() {
   const limit = $('subscription-limit').value;
-  const path = limit === 'all' ? 'sub/all.txt' : 'sub/all-' + limit + '.txt';
+  const path = limit === 'all' ? 'sub/all-happ.txt' : 'sub/all-happ-' + limit + '.txt';
   const url = new URL(path, new URL('.', window.location.href)).href;
   $('subscription-url').textContent = url;
   $('open-subscription').href = url;
