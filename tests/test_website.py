@@ -86,5 +86,22 @@ class WebsiteScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
 
 
+    def test_homepage_exposes_two_independent_happ_subscriptions(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Подписка из загруженного JSON", html)
+        self.assertIn("./sub/scanner.txt", html)
+        self.assertIn("./scanner.html", html)
+
+    def test_public_scanner_page_shows_geo_filters_and_own_subscription(self):
+        html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
+        self.assertIn("data-scanner.json", html)
+        self.assertIn("sub/scanner.txt", html)
+        self.assertIn("scanner-'+value+'.txt", html)
+        self.assertIn("countryCode", html)
+        self.assertIn("country", html)
+        self.assertIn("city", html)
+        self.assertIn("Автоподбор", html)
+
+
 if __name__ == "__main__":
     unittest.main()
