@@ -77,9 +77,19 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   catch (_) { const area=document.createElement('textarea'); area.value=value; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); }
   button.textContent='Скопировано ✓'; setTimeout(()=>button.textContent=old,1400);
  }
+ function locationLabel(n) {
+  const code=String(n.countryCode||'').trim().toUpperCase();
+  const country=String(n.country||'').trim();
+  const city=String(n.city||'').trim();
+  if(!country)return '❗ Геолокация не определена';
+  const flag=/^[A-Z]{2}$/.test(code)
+   ? String.fromCodePoint(0x1F1E6+code.charCodeAt(0)-65,0x1F1E6+code.charCodeAt(1)-65)
+   : '❗';
+  return flag+' '+country+(city?' · '+city:'');
+ }
  function render() {
   const query=$('search').value.trim().toLowerCase(), protocol=$('protocol').value;
-  const filtered=nodes.filter(n=>(protocol==='all'||n.protocol===protocol)&&(n.name+' '+n.host+' '+n.port+' '+n.protocol).toLowerCase().includes(query));
+  const filtered=nodes.filter(n=>(protocol==='all'||n.protocol===protocol)&&(locationLabel(n)+' '+n.name+' '+n.host+' '+n.port+' '+n.protocol).toLowerCase().includes(query));
   $('visible-count').textContent=filtered.length+' из '+nodes.length;
   const root=$('nodes'); root.replaceChildren();
   if(!filtered.length){const empty=document.createElement('div');empty.className='state panel';empty.style.gridColumn='1/-1';const title=document.createElement('strong');title.textContent=nodes.length?'Ничего не найдено':'Пока нет подтверждённых узлов';const note=document.createElement('span');note.textContent=nodes.length?'Измени поисковый запрос или фильтр.':'Каталог наполнится после успешной проверки источников.';empty.append(title,note);root.append(empty);return;}
@@ -88,7 +98,7 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
    const top=document.createElement('div');top.className='node-top';
    const tag=document.createElement('span');tag.className='protocol';tag.textContent=n.protocol;
    const ok=document.createElement('span');ok.className='verified';ok.textContent='✓ ПРОВЕРЕН';top.append(tag,ok);
-   const name=document.createElement('div');name.className='node-name';name.textContent=n.name||n.host;
+   const name=document.createElement('div');name.className='node-name';name.textContent=locationLabel(n);
    const endpoint=document.createElement('div');endpoint.className='endpoint';endpoint.textContent=n.host+':'+n.port;
    const services=document.createElement('small');services.style.display='block';services.style.color='#9caab7';services.style.margin='5px 0';
    const checks=n.services||{};const failed=Object.entries(checks).filter(([,v])=>!v.ok).map(([name])=>name);
