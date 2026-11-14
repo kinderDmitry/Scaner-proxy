@@ -141,6 +141,10 @@ def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> lis
             payload = json.loads(decrypted.decode("utf-8"))
         except Exception as exc:
             raise ValueError("Uploaded JSON could not be decrypted or validated") from exc
+    source_name = (
+        str(payload.get("source") or "App upload").strip()[:80]
+        if isinstance(payload, dict) else "App upload"
+    ) or "App upload"
     values = payload.get("configs", []) if isinstance(payload, dict) else payload
     if not isinstance(values, list):
         raise ValueError("Uploaded JSON must contain a configs array")
@@ -158,8 +162,10 @@ def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> lis
             }
         else:
             continue
-        if line.strip():
-            collected.append(("App upload", line.strip(), metadata))
+        # Scaner Proxy X exports objects with uri + optional geo fields.
+        # Empty geo fields are valid: the verifier can resolve them later.
+        if line.strip() and parse_link(line.strip()):
+            collected.append((source_name, line.strip(), metadata))
     return collected
 
 
