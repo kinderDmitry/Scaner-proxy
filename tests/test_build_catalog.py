@@ -279,7 +279,7 @@ class OutputTests(unittest.TestCase):
                       "port": 1080, "name": "fast", "checkedAt": "2026-01-01", "test": "HTTPS",
                       "speedMbps": 40.0, "latencyMs": 120}
             mod.write_outputs([slower, faster], site)
-            lines = [line for line in (site / "sub" / "all.txt").read_text().splitlines() if line.startswith("socks://")]
+            lines = [line for line in (site / "sub" / "all.raw.txt").read_text().splitlines() if line.startswith("socks://")]
             self.assertTrue(lines[0].startswith(faster["uri"] + "#"))
             self.assertTrue(lines[1].startswith(slower["uri"] + "#"))
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
