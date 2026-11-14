@@ -135,6 +135,17 @@ internal fun rankExportableProxies(items: Iterable<ProxyItem>): List<ProxyItem> 
         )
         .toList()
 
+internal fun validateExportBytes(expected: ByteArray, actual: ByteArray): Int {
+    require(expected.isNotEmpty()) { "Нельзя сохранить пустой JSON." }
+    check(actual.isNotEmpty()) {
+        "После сохранения файл оказался пустым (0 байт). Выбери папку «Загрузки» и повтори экспорт."
+    }
+    check(expected.contentEquals(actual)) {
+        "Файл после сохранения отличается от исходного JSON или записан не полностью. Повтори экспорт в папку «Загрузки»."
+    }
+    return actual.size
+}
+
 private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape(18.dp)): Modifier =
     this.drawBehind {
         drawRoundRect(
@@ -151,6 +162,17 @@ private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape
         .border(BorderStroke(1.dp, Brush.linearGradient(listOf(AccentCyan.copy(alpha = 0.48f), Line, AccentCyan.copy(alpha = 0.16f)))), shape)
 
 class MainActivity : ComponentActivity() {
+    private fun writeAndVerifyExport(uri: Uri, payload: String): Int {
+        val expected = payload.toByteArray(Charsets.UTF_8)
+        contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+            stream.write(expected)
+            stream.flush()
+        } ?: error("Не удалось открыть файл для записи.")
+        val actual = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: error("Не удалось повторно открыть сохранённый файл для проверки.")
+        return validateExportBytes(expected, actual)
+    }
+
     private lateinit var repository: ProxyRepository
     private var pendingHiddifyExport: List<ProxyItem> = emptyList()
     private var pendingSiteExport: List<ProxyItem> = emptyList()
@@ -162,12 +184,17 @@ class MainActivity : ComponentActivity() {
                     buildSiteUploadJson(geoResolved)
                 }
                 val count = withContext(Dispatchers.IO) {
-                    contentResolver.openOutputStream(uri)?.use { stream ->
-                        stream.write(payload.toByteArray(Charsets.UTF_8))
-                        org.json.JSONObject(payload).getJSONArray("configs").length()
-                    } ?: error("Не удалось открыть файл")
+                    writeAndVerifyExport(uri, payload)
+                    org.json.JSONObject(payload).getJSONArray("configs").length()
                 }
-                Toast.makeText(this@MainActivity, "JSON для сайта сохранён: $count проверенных конфигураций", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "JSON сохранён и проверен: $count конфигураций · файл не пустой", Toast.LENGTH_LONG).show()
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = android.content.ClipData.newUri(contentResolver, "Scaner Proxy JSON", uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(shareIntent, "Отправить JSON в ChatGPT или другое приложение"))
             } catch (error: Exception) {
                 Toast.makeText(this@MainActivity, "Ошибка сохранения: ${error.message}", Toast.LENGTH_LONG).show()
             }
@@ -180,10 +207,8 @@ class MainActivity : ComponentActivity() {
                     buildHiddifySingBoxConfig(rankExportableProxies(pendingHiddifyExport))
                 }
                 val count = withContext(Dispatchers.IO) {
-                    contentResolver.openOutputStream(uri)?.use { stream ->
-                        stream.write(payload.toByteArray(Charsets.UTF_8))
-                        org.json.JSONObject(payload).getJSONArray("outbounds").length()
-                    } ?: error("Не удалось открыть файл")
+                    writeAndVerifyExport(uri, payload)
+                    org.json.JSONObject(payload).getJSONArray("outbounds").length()
                 }
                 Toast.makeText(this@MainActivity, "Hiddify JSON сохранён: $count узлов с учётом фильтров", Toast.LENGTH_LONG).show()
             } catch (error: Exception) {
