@@ -20,8 +20,10 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
  <div class="toolbar"><input id="upload-file" class="search" type="file" accept=".json,.txt,.list,application/json,text/plain" aria-label="JSON файл"></div>
  <label class="foot" for="upload-text" style="display:block;text-align:left;margin:0 0 7px">Резервный способ для Android: если браузер прочитал 0 байт, открой JSON в текстовом редакторе, скопируй всё содержимое и вставь сюда.</label>
  <textarea id="upload-text" class="search" rows="5" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder='Вставь сюда весь JSON, начиная с {"configs":[...]} или список прокси-ссылок'></textarea>
- <p class="foot" style="text-align:left;margin:8px 0 10px">Выбери JSON из приложения или TXT со ссылками VLESS/SOCKS5 (по одной на строку). Если выбор файла передаёт пустой поток, можно вставить содержимое напрямую. Лимит 2 МБ и 1000 конфигураций. Для записи в репозиторий потребуется подтвердить вход через GitHub. Содержимое шифруется в браузере до отправки.</p>
- <div class="toolbar"><button class="btn primary" id="upload">Авторизоваться и отправить JSON</button></div>
+ <label class="foot" for="github-token" style="display:block;text-align:left;margin:8px 0 7px">GitHub Fine-grained token (начинается с github_pat_)</label>
+ <input id="github-token" class="search" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…" aria-label="GitHub fine-grained token">
+ <p class="foot" style="text-align:left;margin:8px 0 10px">Выбери JSON из приложения или TXT со ссылками VLESS/SOCKS5 (по одной на строку). Лимит 2 МБ и 1000 конфигураций. Создай Fine-grained token только для репозитория Scaner-proxy с разрешением <b>Contents: Read and write</b>. Вставленный токен используется только в памяти страницы и очищается после успешной загрузки. Не отправляй его никому. Содержимое JSON шифруется в браузере до отправки.</p>
+ <div class="toolbar"><button class="btn primary" id="upload">Проверить токен и отправить JSON</button></div>
  <div id="upload-status" class="foot" role="status" aria-live="polite">Ожидается JSON-файл. Cloudflare не используется.</div>
 </section>
 <section class="stats" aria-label="Статистика"><div class="stat"><label>Рабочих конфигураций</label><strong class="cyan" id="total">—</strong></div><div class="stat"><label>VLESS</label><strong id="vless">—</strong></div><div class="stat"><label>SOCKS5</label><strong id="socks">—</strong></div></section>
@@ -43,11 +45,10 @@ button,input,select{font:inherit}.wrap{width:min(1120px,calc(100% - 32px));margi
  const $ = id => document.getElementById(id);
  async function readJsonResponse(response, context) {
   const raw = await response.text();
-  if (!raw.trim()) throw new Error(context + ': GitHub вернул пустой ответ (HTTP ' + response.status + '). Повтори попытку; если повторяется — проверь OAuth Device Flow и доступ репозитория.');
+  if (!raw.trim()) throw new Error(context + ': GitHub вернул пустой ответ (HTTP ' + response.status + '). Повтори попытку и проверь доступ токена к репозиторию.');
   try { return JSON.parse(raw); }
   catch (_) { throw new Error(context + ': GitHub вернул невалидный JSON (HTTP ' + response.status + '). ' + raw.slice(0, 160)); }
  }
- const GITHUB_CLIENT_ID = 'Ov23liQBvZ6j1tpibyaW';
  const UPLOAD_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0SRXwL2hJWw8LTVdflP9
 rd867ijvDyg4IRX0fc3AAN9NC9UZL2wPU0+7ZSzrSon5+wR3CfOsLp9UGnzo1Ks+
@@ -138,26 +139,11 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   } finally {$('reload').disabled=false;$('reload').textContent='Обновить';}
  }
  document.querySelectorAll('[data-copy-url]').forEach(button=>button.addEventListener('click',()=>copyText($(button.dataset.copyUrl).textContent,button)));
- async function githubDeviceLogin(status) {
-  status.textContent='Подключаем GitHub…';
-  const params=new URLSearchParams({client_id:GITHUB_CLIENT_ID,scope:'public_repo'});
-  const deviceResponse=await fetch('https://github.com/login/device/code',{method:'POST',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:params});
-  if(!deviceResponse.ok)throw new Error('GitHub Device Flow недоступен (HTTP '+deviceResponse.status+'). Проверь, включён ли Device Flow в настройках OAuth App.');
-  const device=await readJsonResponse(deviceResponse,'Авторизация GitHub');
-  if(!device.device_code||!device.user_code)throw new Error(device.error_description||'GitHub не выдал код авторизации.');
-  status.textContent='Открой '+device.verification_uri+' и введи код '+device.user_code+'. Ожидаем подтверждение…';
-  const interval=Math.max(5,Number(device.interval)||5)*1000;
-  const deadline=Date.now()+15*60*1000;
-  while(Date.now()<deadline){
-   await new Promise(resolve=>setTimeout(resolve,interval));
-   const tokenResponse=await fetch('https://github.com/login/oauth/access_token',{method:'POST',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:GITHUB_CLIENT_ID,device_code:device.device_code,grant_type:'urn:ietf:params:oauth:grant-type:device_code'})});
-   const result=await readJsonResponse(tokenResponse,'Получение токена GitHub');
-   if(result.access_token){githubToken=result.access_token;return;}
-   if(result.error==='slow_down'){await new Promise(resolve=>setTimeout(resolve,5000));continue;}
-   if(result.error==='expired_token'||result.error==='access_denied')throw new Error(result.error_description||'Авторизация отменена или истекла.');
-   if(result.error!=='authorization_pending')throw new Error(result.error_description||result.error||'Ошибка авторизации GitHub.');
-  }
-  throw new Error('Время ожидания GitHub-авторизации истекло. Повтори отправку.');
+ function readGithubToken() {
+  const token = $('github-token').value.trim();
+  if (!token) throw new Error('Вставь Fine-grained token GitHub.');
+  if (!token.startsWith('github_pat_')) throw new Error('Нужен Fine-grained token GitHub, который начинается с github_pat_.');
+  return token;
  }
  function bytesToBase64(bytes){let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary);}
  async function encryptUpload(parsed){
@@ -176,13 +162,22 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
   let sha=null;
   const existing=await fetch(api,{headers});
   if(existing.ok){const data=await readJsonResponse(existing,'Чтение предыдущей загрузки');if(!data.sha)throw new Error('GitHub не вернул SHA существующего файла.');sha=data.sha;}
-  else if(existing.status!==404){throw new Error('Не удалось проверить файл в репозитории (HTTP '+existing.status+').');}
+  else if(existing.status!==404){
+   if(existing.status===401)throw new Error('GitHub отклонил токен (401). Проверь, что он действителен и не истёк.');
+   if(existing.status===403)throw new Error('GitHub запретил чтение (403). Для репозитория Scaner-proxy включи Contents: Read and write.');
+   throw new Error('Не удалось проверить файл в репозитории (HTTP '+existing.status+').');
+  }
   const content=btoa(unescape(encodeURIComponent(JSON.stringify(envelope,null,2)+'\n')));
   const body={message:'Upload encrypted proxy catalog JSON from website',content,branch:'main'};
   if(sha)body.sha=sha;
   const response=await fetch(api,{method:'PUT',headers,body:JSON.stringify(body)});
   const result=await readJsonResponse(response,'Сохранение файла в GitHub');
-  if(!response.ok)throw new Error(result.message||('GitHub API HTTP '+response.status));
+  if(!response.ok){
+   if(response.status===401)throw new Error('GitHub отклонил токен (401). Создай новый Fine-grained token и повтори попытку.');
+   if(response.status===403)throw new Error('Нет права записи (403). Проверь Repository access и Contents: Read and write у токена.');
+   if(response.status===404)throw new Error('GitHub не видит репозиторий или файл (404). Выбери только kinderDmitry/Scaner-proxy в Repository access.');
+   throw new Error(result.message||('GitHub API HTTP '+response.status));
+  }
   if(!result.content?.sha||!result.commit?.sha)throw new Error('GitHub не подтвердил сохранение файла: в ответе отсутствует SHA.');
   return result;
  }
@@ -325,12 +320,13 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
     }
    }
    const {parsed,configs}=parsedResult;
-   if(!githubToken)await githubDeviceLogin(status);
+   githubToken=readGithubToken();
    status.textContent='Шифруем файл в браузере…';
    const envelope=await encryptUpload(parsed);
    status.textContent='Сохраняем зашифрованный файл в main…';
    await saveToRepository(envelope);
-   status.textContent='Готово: '+configs.length+' конфигураций сохранено в репозитории. GitHub Actions автоматически запустит проверку; в каталог попадут только прошедшие HTTPS-тест.';
+   status.textContent='Готово: '+configs.length+' конфигураций сохранено в main. GitHub Actions автоматически запустит проверку; в каталог попадут только прошедшие HTTPS-тест.';
+   githubToken=null;$('github-token').value='';
   }catch(error){status.textContent='Ошибка загрузки: '+error.message;}
   finally{$('upload').disabled=false;}
  });
