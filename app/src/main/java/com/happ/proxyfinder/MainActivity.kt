@@ -1,11 +1,15 @@
 package com.happ.proxyfinder
 
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import android.app.AlertDialog
 import android.os.Bundle
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -164,13 +168,71 @@ private fun Modifier.premiumPanel(shape: RoundedCornerShape = RoundedCornerShape
 class MainActivity : ComponentActivity() {
     private fun writeAndVerifyExport(uri: Uri, payload: String): Int {
         val expected = payload.toByteArray(Charsets.UTF_8)
-        contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+        contentResolver.openOutputStream(uri, "w")?.use { stream ->
             stream.write(expected)
             stream.flush()
         } ?: error("Не удалось открыть файл для записи.")
         val actual = contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: error("Не удалось повторно открыть сохранённый файл для проверки.")
         return validateExportBytes(expected, actual)
+    }
+
+    /**
+     * Persist the site catalog in the public Downloads collection instead of relying
+     * on a document-provider CreateDocument URI. This makes the exported file visible
+     * to Android Files and browser upload pickers as a normal downloaded file.
+     */
+    private fun saveSiteJsonToDownloads(payload: String): Pair<Uri, Int> {
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            "Прямое сохранение в «Загрузки» требует Android 10 или новее."
+        }
+        val expected = payload.toByteArray(Charsets.UTF_8)
+        require(expected.isNotEmpty()) { "Нельзя сохранить пустой JSON." }
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "scaner-proxy-site-${System.currentTimeMillis()}.json")
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Scaner Proxy")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("Android не создал файл в папке «Загрузки».")
+        try {
+            contentResolver.openOutputStream(uri, "w")?.use { stream ->
+                stream.write(expected)
+                stream.flush()
+            } ?: error("Android не открыл файл в «Загрузках» для записи.")
+
+            val beforePublish = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("Не удалось прочитать временный JSON перед публикацией.")
+            validateExportBytes(expected, beforePublish)
+
+            val publishValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            check(contentResolver.update(uri, publishValues, null, null) == 1) {
+                "Android не смог опубликовать JSON в папке «Загрузки»."
+            }
+
+            // Re-open only after IS_PENDING=0: this is the exact public file that
+            // the browser's system picker and ChatGPT will receive.
+            val publishedBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("Не удалось повторно прочитать опубликованный JSON.")
+            val byteCount = validateExportBytes(expected, publishedBytes)
+            return uri to byteCount
+        } catch (error: Exception) {
+            contentResolver.delete(uri, null, null)
+            throw error
+        }
+    }
+
+    private fun shareSiteJson(uri: Uri) {
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = android.content.ClipData.newUri(contentResolver, "Scaner Proxy JSON", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(shareIntent, "Отправить JSON в ChatGPT или другое приложение"))
     }
 
     private lateinit var repository: ProxyRepository
@@ -188,13 +250,7 @@ class MainActivity : ComponentActivity() {
                     org.json.JSONObject(payload).getJSONArray("configs").length()
                 }
                 Toast.makeText(this@MainActivity, "JSON сохранён и проверен: $count конфигураций · файл не пустой", Toast.LENGTH_LONG).show()
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/json"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    clipData = android.content.ClipData.newUri(contentResolver, "Scaner Proxy JSON", uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(shareIntent, "Отправить JSON в ChatGPT или другое приложение"))
+                shareSiteJson(uri)
             } catch (error: Exception) {
                 Toast.makeText(this@MainActivity, "Ошибка сохранения: ${error.message}", Toast.LENGTH_LONG).show()
             }
@@ -320,7 +376,34 @@ class MainActivity : ComponentActivity() {
                         },
                         onSaveSiteJson = { items ->
                             pendingSiteExport = items
-                            siteJsonFileLauncher.launch("scaner-proxy-site-" + System.currentTimeMillis() + ".json")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                lifecycleScope.launch {
+                                    try {
+                                        val geoResolved = repository.resolveCountries(items) { }
+                                        val payload = withContext(Dispatchers.Default) {
+                                            buildSiteUploadJson(geoResolved)
+                                        }
+                                        val (uri, byteCount) = withContext(Dispatchers.IO) {
+                                            saveSiteJsonToDownloads(payload)
+                                        }
+                                        val configCount = org.json.JSONObject(payload).getJSONArray("configs").length()
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "JSON проверен: $configCount конфигураций, $byteCount байт. Папка: Загрузки/Scaner Proxy",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        shareSiteJson(uri)
+                                    } catch (error: Exception) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Ошибка экспорта JSON: ${error.message}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            } else {
+                                siteJsonFileLauncher.launch("scaner-proxy-site-" + System.currentTimeMillis() + ".json")
+                            }
                         },
                     )
                 }
