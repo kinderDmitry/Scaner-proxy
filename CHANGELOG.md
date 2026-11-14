@@ -1,3 +1,20 @@
+## [1.11.0] - 2026-11-14
+
+### Added
+- Separate HAPP subscription for uploaded JSON and public-feed scanner results.
+- Global scanner page with search by country, city, endpoint, protocol and source.
+- Public SOCKS5 feed sources from ProxyScrape and Thordata, alongside the existing VLESS feeds.
+- Independent fastest-node Auto Pick and fixed-size subscription variants for both catalogs.
+
+### Changed
+- Catalog builder now fetches and verifies public feeds as a separate source family; uploaded JSON is no longer mixed into scanner results.
+- Both catalogs retain their last successful publication if a source returns no candidates or no candidate passes verification.
+- Every subscription entry displays the measured fastest node first, then geo-labelled nodes.
+
+### Safety
+- Public discovery consumes published feed URLs only; it does not sweep arbitrary third-party address ranges.
+- Private, loopback, link-local, multicast and non-global endpoints remain excluded.
+
 ## [1.10.0] - 2026-11-13
 
 ### Added
