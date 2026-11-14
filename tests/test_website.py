@@ -41,6 +41,14 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("не более 1000 конфигураций", html)
         self.assertIn("file.size", html)
 
+    def test_node_cards_show_flag_country_and_city(self):
+        html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("function locationLabel(n)", html)
+        self.assertIn("n.countryCode", html)
+        self.assertIn("n.country", html)
+        self.assertIn("n.city", html)
+        self.assertIn("Геолокация не определена", html)
+
     def test_inline_javascript_is_valid(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
         scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.I | re.S)
