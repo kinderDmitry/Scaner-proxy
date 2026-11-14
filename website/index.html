@@ -70,7 +70,7 @@ gvlzQSpXKkeq1vtZwT7FzJUWU9PO3/b+8Fd3KHINwc//AgMBAAE=
  const defaultSubscription = new URL('sub/all.txt', new URL('.', window.location.href)).href;
  function updateSubscription() {
   const limit = $('subscription-limit').value;
-  const path = limit === 'all' ? 'sub/all.txt' : 'sub/all-happ-' + limit + '.txt';
+  const path = limit === 'all' ? 'sub/all.txt' : 'sub/all-' + limit + '.txt';
   const url = new URL(path, new URL('.', window.location.href)).href;
   $('subscription-url').textContent = url;
   $('open-subscription').href = url;
