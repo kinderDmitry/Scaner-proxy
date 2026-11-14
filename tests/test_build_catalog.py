@@ -328,5 +328,20 @@ class OutputTests(unittest.TestCase):
             self.assertTrue((site / "sub" / "all.txt").exists())
 
 
+    def test_scanner_candidate_limits_are_balanced_across_public_sources(self):
+        raw = [
+            ("feed-a", f"socks5://a{i}.example:1080", {}) for i in range(5)
+        ] + [
+            ("feed-b", f"socks5://b{i}.example:1080", {}) for i in range(5)
+        ]
+        with patch.object(mod, "test_candidate", side_effect=lambda item, _binary: item):
+            count, verified = mod.verify_records(
+                raw, "unused-sing-box", workers=2, max_candidates=4, per_source_limit=2
+            )
+        self.assertEqual(count, 4)
+        self.assertEqual(len(verified), 4)
+        self.assertEqual({item["source"] for item in verified}, {"feed-a", "feed-b"})
+
+
 if __name__ == "__main__":
     unittest.main()
