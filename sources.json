@@ -20,6 +20,10 @@
       "name": "Thordata global public SOCKS5 feed",
       "url": "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks5.txt",
       "protocol": "socks5"
+    },
+    {
+      "name": "Maximilian Feix public global proxy feed",
+      "url": "https://raw.githubusercontent.com/maximilianfeix/free-proxy-list/main/all.txt"
     }
   ]
 }
