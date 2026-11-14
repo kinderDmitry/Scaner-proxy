@@ -394,36 +394,34 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
     for key, nodes in groups.items():
         filename = all_name if key == "all" else (f"{prefix}-{key}" if prefix else key)
         lines = subscription_lines(nodes) if key == "all" else [x["uri"] for x in nodes]
+        title = "Global Scanner" if prefix else "JSON Upload"
         body = nl.join([
-            f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
+            f"#profile-title: {title}",
             "#profile-update-interval: 1",
-            "#subscription-auto-update-enable: 1",
-            "#subscription-auto-update-open-enable: 1",
         ] + lines)
         if lines:
             body += nl
+        encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
         (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
-        (sub / (filename + ".base64")).write_text(
-            base64.b64encode(body.encode()).decode() + nl, encoding="ascii"
-        )
+        (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
+        (sub / (filename + "-happ.txt")).write_text(encoded_body, encoding="ascii")
 
     # GitHub Pages is static: publish fixed-size variants with auto-pick always first.
     all_lines = subscription_lines(verified)
     for limit in (0, 10, 25, 50, 100, 200, 500):
         selected = all_lines[:1 + limit] if all_lines else []
+        title = "Global Scanner" if prefix else "JSON Upload"
         body = nl.join([
-            f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
+            f"#profile-title: {title}",
             "#profile-update-interval: 1",
-            "#subscription-auto-update-enable: 1",
-            "#subscription-auto-update-open-enable: 1",
         ] + selected)
         if selected:
             body += nl
         filename = f"{all_name}-{limit}"
+        encoded_body = base64.b64encode(body.encode("utf-8")).decode("ascii") + nl
         (sub / (filename + ".txt")).write_text(body, encoding="utf-8")
-        (sub / (filename + ".base64")).write_text(
-            base64.b64encode(body.encode()).decode() + nl, encoding="ascii"
-        )
+        (sub / (filename + ".base64")).write_text(encoded_body, encoding="ascii")
+        (sub / (filename + "-happ.txt")).write_text(encoded_body, encoding="ascii")
 
     payload = {
         "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
