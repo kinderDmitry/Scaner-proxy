@@ -43,12 +43,13 @@ class FeedParsingTests(unittest.TestCase):
             path = Path(temp) / "upload.json"
             path.write_text(json.dumps({"configs": [
                 "vless://11111111-1111-4111-8111-111111111111@example.com:443#node",
-                {"uri": "socks5://proxy.example:1080"}
+                {"uri": "socks5://proxy.example:1080", "country": "Германия", "countryCode": "DE", "city": "Франкфурт"}
             ]}), encoding="utf-8")
             result = mod.fetch_uploaded(path)
             self.assertEqual(len(result), 2)
             self.assertEqual(result[0][0], "App upload")
             self.assertTrue(result[1][1].startswith("socks5://"))
+            self.assertEqual(result[1][2], {"country": "Германия", "countryCode": "DE", "city": "Франкфурт"})
 
 
     def test_decrypts_hybrid_rsa_aes_uploaded_json(self):
