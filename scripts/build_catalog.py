@@ -110,7 +110,7 @@ def fetch_sources(config_path: Path) -> list[tuple[str, str]]:
 
 
 
-def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> list[tuple[str, str]]:
+def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> list[tuple[str, str, dict[str, str]]]:
     """Read explicitly uploaded JSON; decrypt the browser's hybrid RSA/AES envelope."""
     if not config_path.exists():
         return []
@@ -146,16 +146,20 @@ def fetch_uploaded(config_path: Path = ROOT / "incoming" / "upload.json") -> lis
         raise ValueError("Uploaded JSON must contain a configs array")
     if len(values) > MAX_CANDIDATES:
         raise ValueError("Uploaded JSON contains more than 1000 configurations")
-    collected: list[tuple[str, str]] = []
+    collected: list[tuple[str, str, dict[str, str]]] = []
     for value in values:
         if isinstance(value, str):
-            line = value
+            line, metadata = value, {}
         elif isinstance(value, dict):
             line = str(value.get("uri") or value.get("rawConfig") or value.get("config") or "")
+            metadata = {
+                key: str(value.get(key) or "").strip()
+                for key in ("country", "countryCode", "city")
+            }
         else:
             continue
         if line.strip():
-            collected.append(("App upload", line.strip()))
+            collected.append(("App upload", line.strip(), metadata))
     return collected
 
 
@@ -302,7 +306,11 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
                 speed_mbps = 0.0
                 if speed.returncode == 0 and len(speed_parts) == 2 and speed_parts[0] == "200":
                     speed_mbps = round(float(speed_parts[1]) * 8 / 1_000_000, 2)
-                item.update(lookup_geo(item["host"]))
+                resolved_geo = lookup_geo(item["host"])
+                for field in ("country", "countryCode", "city"):
+                    if resolved_geo.get(field):
+                        item[field] = resolved_geo[field]
+                item["name"] = location_label(item)
                 item["uri"] = with_location_label(item["uri"], item["name"])
                 item["latencyMs"] = latency_ms
                 item["speedMbps"] = speed_mbps
@@ -387,12 +395,15 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE) -> None
 def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int = 8) -> dict[str, int]:
     raw = fetch_uploaded()
     candidates, per_source = {}, {}
-    for source_name, line in raw:
+    for source_name, line, geo_metadata in raw:
         if per_source.get(source_name, 0) >= 200:
             continue
         item = parse_link(line)
         if item:
             item["source"] = source_name
+            for field in ("country", "countryCode", "city"):
+                if geo_metadata.get(field):
+                    item[field] = geo_metadata[field]
             candidates.setdefault(item["uri"], item)
             per_source[source_name] = per_source.get(source_name, 0) + 1
         if len(candidates) >= MAX_CANDIDATES:
