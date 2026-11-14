@@ -77,8 +77,8 @@ class ProxyExportRankingTest {
 
         assertEquals("Scaner Proxy X Android", payload.getString("source"))
         assertEquals(2, configs.length())
-        assertEquals("vless://fast@example.com:443", configs.getString(0))
-        assertEquals("socks://proxy.example:1080", configs.getString(1))
+        assertEquals("vless://fast@example.com:443", configs.getJSONObject(0).getString("uri"))
+        assertEquals("socks://proxy.example:1080", configs.getJSONObject(1).getString("uri"))
     }
 
     @Test
