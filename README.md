@@ -1,20 +1,23 @@
 # Scaner Proxy X — online catalog
 
-Static website hosted on GitHub Pages. Uploads are committed directly to the repository through GitHub OAuth Device Flow; no Cloudflare Worker or separate upload server is used.
+Static website hosted on GitHub Pages. Uploads are committed directly to the repository using a user-supplied GitHub fine-grained personal access token; no OAuth browser flow, Cloudflare Worker, or separate upload server is used.
 
 ## Upload flow
 
-1. Select the JSON exported by the Android app.
-2. Press **Авторизоваться и отправить JSON**.
-3. GitHub displays a one-time code. Open the verification URL, sign in and approve access to the public repository.
-4. The browser encrypts the JSON with AES-256-GCM and wraps the AES key with the repository's RSA public key. Only the encrypted envelope is committed to `incoming/upload.json`.
-5. GitHub Actions decrypts it using the private key stored in the repository's Actions secret, checks each supported VLESS/SOCKS5 tunnel with sing-box, and publishes only verified entries.
+1. Select the JSON exported by the Android app (or paste its complete contents).
+2. Create a GitHub fine-grained personal access token for **only** `kinderDmitry/Scaner-proxy`.
+3. Grant the token the repository permission **Contents: Read and write**. An expiration date is recommended.
+4. Paste the token into the password field on the website and press **Проверить токен и отправить JSON**.
+5. The browser encrypts the JSON with AES-256-GCM and wraps the AES key with the repository's RSA public key. Only the encrypted envelope is committed to `incoming/upload.json` on `main`.
+6. GitHub Actions decrypts it using the private key stored in the repository's Actions secret, checks each supported VLESS/SOCKS5 tunnel with sing-box, and publishes only verified entries.
 
-The OAuth access token is kept in page memory only and is not written to localStorage. Reloading the page requires a new GitHub Device Flow authorization. The OAuth app must have **Enable Device Flow** enabled and its Client ID configured in the website.
+The token is used only in page memory, is not written to localStorage/sessionStorage, URL, or the uploaded JSON, and is cleared from the field after a successful upload. The website does not receive or store the token on a server. Do not share the token or paste it into chat. If it is exposed, revoke it in GitHub settings.
 
 ## One-time repository setup
 
-In **Settings → Secrets and variables → Actions**, create this repository secret:
+In **Settings → Developer settings → Personal access tokens → Fine-grained tokens**, create a token with repository access limited to `kinderDmitry/Scaner-proxy` and **Contents: Read and write**.
+
+Separately, in **Settings → Secrets and variables → Actions**, create this repository secret:
 
 - `UPLOAD_PRIVATE_KEY_PEM` — the RSA private key matching the public key embedded in `website/index.html`.
 
