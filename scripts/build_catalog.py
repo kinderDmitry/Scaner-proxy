@@ -396,7 +396,7 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         lines = subscription_lines(nodes) if key == "all" else [x["uri"] for x in nodes]
         body = nl.join([
             f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
-            "#profile-update-interval: 6",
+            "#profile-update-interval: 1",
         ] + lines)
         if lines:
             body += nl
@@ -411,7 +411,7 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         selected = all_lines[:1 + limit] if all_lines else []
         body = nl.join([
             f"#profile-title: Scaner Proxy X — {('сканер' if prefix else 'загруженный JSON')}",
-            "#profile-update-interval: 6",
+            "#profile-update-interval: 1",
         ] + selected)
         if selected:
             body += nl
