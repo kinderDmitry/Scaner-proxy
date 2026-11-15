@@ -119,7 +119,7 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("data-scanner.json", html)
         self.assertIn("sub/scanner.txt", html)
         self.assertIn("sub/scanner.txt", html)
-        self.assertIn("scanner-'+value+'.txt", html)
+        self.assertIn("filtered.slice(0,Number(limit))", html)
         self.assertIn("countryCode", html)
         self.assertIn("country", html)
         self.assertIn("city", html)
