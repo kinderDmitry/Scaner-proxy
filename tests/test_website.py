@@ -107,6 +107,14 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("АВТООБНОВЛЕНИЕ · 1 СЕК", html)
 
 
+    def test_public_scanner_search_matches_android_search_fields_and_ranking(self):
+        html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
+        for field in ("host", "port", "protocol", "source", "title", "name", "country", "countryCode", "city"):
+            self.assertIn("n." + field, html)
+        self.assertIn("qualityScore", html)
+        self.assertIn("latencyMs", html)
+        self.assertIn("toLowerCase()", html)
+
     def test_scanner_display_limit_never_changes_happ_subscription_url(self):
         html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
         self.assertIn("new URL('sub/scanner.txt',base)", html)
