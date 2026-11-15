@@ -134,6 +134,33 @@ class GeoTests(unittest.TestCase):
 
 
 class VerificationTests(unittest.TestCase):
+    def test_happ_via_proxy_get_ping_uses_two_gstatic_get_requests_and_best_latency(self):
+        from types import SimpleNamespace
+        responses = [
+            SimpleNamespace(returncode=0, stdout="204 0.240000"),
+            SimpleNamespace(returncode=0, stdout="204 0.110000"),
+        ]
+        with patch.object(mod.subprocess, "run", side_effect=responses) as run:
+            latency = mod.happ_via_proxy_get_ping(10808)
+        self.assertEqual(latency, 110)
+        self.assertEqual(run.call_count, 2)
+        for call in run.call_args_list:
+            command = call.args[0]
+            self.assertIn("--request", command)
+            self.assertEqual(command[command.index("--request") + 1], "GET")
+            self.assertIn(mod.TEST_URL, command)
+            self.assertIn("--max-time", command)
+            self.assertEqual(command[command.index("--max-time") + 1], "10")
+
+    def test_happ_via_proxy_get_ping_rejects_non_204_response(self):
+        from types import SimpleNamespace
+        responses = [
+            SimpleNamespace(returncode=0, stdout="200 0.050000"),
+            SimpleNamespace(returncode=28, stdout=""),
+        ]
+        with patch.object(mod.subprocess, "run", side_effect=responses):
+            self.assertIsNone(mod.happ_via_proxy_get_ping(10808))
+
     def test_builds_vless_reality_outbound(self):
         item = mod.parse_link("vless://11111111-1111-4111-8111-111111111111@example.com:443?security=reality&sni=cdn.example.com&pbk=pub&sid=short&type=ws&path=%2Fws")
         outbound = mod.to_singbox_outbound(item)
@@ -294,11 +321,11 @@ class OutputTests(unittest.TestCase):
             ]
             mod.write_outputs(nodes, site)
             lines = [line for line in (site / "sub" / "all.raw.txt").read_text().splitlines() if line.startswith("socks://")]
-            self.assertTrue(lines[0].startswith("socks://Og==@fast.example:1080"))
+            self.assertTrue(lines[0].startswith("socks://Og==@slow.example:1080"))
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
             self.assertTrue(lines[1].startswith("socks://Og==@mid.example:1080"))
             self.assertIn("🇳🇱 Netherlands — Amsterdam", urllib.parse.unquote(lines[1]))
-            self.assertTrue(lines[2].startswith("socks://Og==@slow.example:1080"))
+            self.assertTrue(lines[2].startswith("socks://Og==@fast.example:1080"))
             self.assertIn("🇩🇪 Germany — Berlin", urllib.parse.unquote(lines[2]))
 
     def test_static_subscription_limits_always_keep_auto_pick_first(self):
