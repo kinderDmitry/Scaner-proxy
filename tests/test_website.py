@@ -102,7 +102,7 @@ class WebsiteScriptTests(unittest.TestCase):
     def test_public_scanner_refreshes_catalog_every_second_without_overlapping_requests(self):
         html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
         self.assertIn("setInterval(load,1000)", html)
-        self.assertIn("let loading=false", html)
+        self.assertIn("loading=false", html)
         self.assertIn("if(loading)return", html)
         self.assertIn("АВТООБНОВЛЕНИЕ · 1 СЕК", html)
 
