@@ -273,8 +273,8 @@ class OutputTests(unittest.TestCase):
             (site / "data-scanner.json").write_text(
                 json.dumps({"total": 1, "nodes": [{"host": "stale.example"}]}), encoding="utf-8"
             )
-            with patch.object(mod, "fetch_uploaded", return_value=[]), \\
-                 patch.object(mod, "verify_records", side_effect=[(0, []), (1, [])]):
+            with patch.object(mod, "fetch_uploaded", return_value=[]):
+                with patch.object(mod, "verify_records", side_effect=[(0, []), (1, [])]):
                 result = mod.build(sources, "missing-sing-box", site)
             self.assertEqual(result, {"candidates": 1, "verified": 0})
             current = json.loads((site / "data-scanner.json").read_text(encoding="utf-8"))
