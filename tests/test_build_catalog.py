@@ -275,7 +275,7 @@ class OutputTests(unittest.TestCase):
             )
             with patch.object(mod, "fetch_uploaded", return_value=[]):
                 with patch.object(mod, "verify_records", side_effect=[(0, []), (1, [])]):
-                result = mod.build(sources, "missing-sing-box", site)
+                    result = mod.build(sources, "missing-sing-box", site)
             self.assertEqual(result, {"candidates": 1, "verified": 0})
             current = json.loads((site / "data-scanner.json").read_text(encoding="utf-8"))
             self.assertEqual(current["total"], 0)
