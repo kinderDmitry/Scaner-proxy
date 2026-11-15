@@ -359,7 +359,7 @@ class OutputTests(unittest.TestCase):
         label = urllib.parse.unquote(mod.subscription_lines([{"uri": "socks://Og==@auto.example:1080"}, node])[1].rsplit("#", 1)[1])
         self.assertEqual(label, "❗ Неизвестная геолокация")
 
-    def test_outputs_are_sorted_by_measured_speed(self):
+    def test_outputs_are_sorted_by_happ_get_latency(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
             slower = {"uri": "socks://Og==@slow.example:1080", "protocol": "SOCKS5", "host": "slow.example",
@@ -370,8 +370,8 @@ class OutputTests(unittest.TestCase):
                       "speedMbps": 40.0, "latencyMs": 120}
             mod.write_outputs([slower, faster], site)
             lines = [line for line in (site / "sub" / "all.raw.txt").read_text().splitlines() if line.startswith("socks://")]
-            self.assertTrue(lines[0].startswith(faster["uri"] + "#"))
-            self.assertTrue(lines[1].startswith(slower["uri"] + "#"))
+            self.assertTrue(lines[0].startswith(slower["uri"] + "#"))
+            self.assertTrue(lines[1].startswith(faster["uri"] + "#"))
             self.assertIn("Автоподбор", urllib.parse.unquote(lines[0]))
 
     def test_first_empty_run_creates_valid_subscription_files(self):
