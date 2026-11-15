@@ -326,7 +326,7 @@ class OutputTests(unittest.TestCase):
             self.assertTrue(lines[1].startswith("socks://Og==@mid.example:1080"))
             self.assertIn("🇳🇱 Netherlands — Amsterdam", urllib.parse.unquote(lines[1]))
             self.assertTrue(lines[2].startswith("socks://Og==@fast.example:1080"))
-            self.assertIn("🇩🇪 Germany — Berlin", urllib.parse.unquote(lines[2]))
+            self.assertIn("🇫🇷 France — Paris", urllib.parse.unquote(lines[2]))
 
     def test_static_subscription_limits_always_keep_auto_pick_first(self):
         with tempfile.TemporaryDirectory() as temp:
