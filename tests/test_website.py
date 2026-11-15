@@ -68,8 +68,8 @@ class WebsiteScriptTests(unittest.TestCase):
 
     def test_upload_help_documents_happ_socks_uri_formats(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("socks://ЛОГИН:ПАРОЛЬ@IP:ПОРТ", html)
-        self.assertIn("socks://@IP:ПОРТ", html)
+        self.assertIn("socks://Og==@IP:ПОРТ", html)
+        self.assertIn("ЛОГИН:ПАРОЛЬ в Base64", html)
 
     def test_node_cards_show_flag_country_and_city(self):
         html = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
