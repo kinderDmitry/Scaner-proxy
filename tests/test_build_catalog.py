@@ -246,6 +246,41 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(result, {"candidates": 0, "verified": 0})
             self.assertEqual(current.read_text(encoding="utf-8"), "previous-catalog")
 
+    def test_public_scanner_clears_stale_nodes_when_no_fresh_candidates_exist(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sources = root / "sources.json"
+            sources.write_text('{"sources":[]}', encoding="utf-8")
+            site = root / "site"
+            site.mkdir()
+            (site / "data-scanner.json").write_text(
+                json.dumps({"total": 1, "nodes": [{"host": "stale.example"}]}), encoding="utf-8"
+            )
+            with patch.object(mod, "fetch_uploaded", return_value=[]):
+                result = mod.build(sources, "missing-sing-box", site)
+            self.assertEqual(result, {"candidates": 0, "verified": 0})
+            current = json.loads((site / "data-scanner.json").read_text(encoding="utf-8"))
+            self.assertEqual(current["total"], 0)
+            self.assertEqual(current["nodes"], [])
+
+    def test_public_scanner_clears_old_nodes_when_all_fresh_candidates_fail(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            sources = root / "sources.json"
+            sources.write_text('{"sources":[]}', encoding="utf-8")
+            site = root / "site"
+            site.mkdir()
+            (site / "data-scanner.json").write_text(
+                json.dumps({"total": 1, "nodes": [{"host": "stale.example"}]}), encoding="utf-8"
+            )
+            with patch.object(mod, "fetch_uploaded", return_value=[]), \\
+                 patch.object(mod, "verify_records", side_effect=[(0, []), (1, [])]):
+                result = mod.build(sources, "missing-sing-box", site)
+            self.assertEqual(result, {"candidates": 1, "verified": 0})
+            current = json.loads((site / "data-scanner.json").read_text(encoding="utf-8"))
+            self.assertEqual(current["total"], 0)
+            self.assertEqual(current["nodes"], [])
+
     def test_subscription_starts_with_fastest_auto_pick_then_geo_named_configs(self):
         with tempfile.TemporaryDirectory() as temp:
             site = Path(temp)
