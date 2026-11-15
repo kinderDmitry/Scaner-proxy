@@ -229,6 +229,8 @@ class OutputTests(unittest.TestCase):
                 self.assertEqual(published, raw_alias)
                 self.assertTrue(published.startswith("#profile-title: " + title + "\n"))
                 self.assertIn("#profile-update-interval: 1\n", published)
+                self.assertIn("#ping-type proxy\n", published)
+                self.assertIn("#check-url-via-proxy: https://www.gstatic.com/generate_204\n", published)
                 self.assertIn("\nsocks://Og==@proxy.example:1080", published)
                 self.assertNotIn("#subscription-auto-update-enable", published)
                 self.assertFalse(published.startswith("I3Byb2ZpbGUt"))
