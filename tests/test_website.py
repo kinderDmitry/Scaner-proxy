@@ -99,6 +99,14 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("./sub/scanner.txt", html)
         self.assertIn("./scanner.html", html)
 
+    def test_public_scanner_refreshes_catalog_every_second_without_overlapping_requests(self):
+        html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
+        self.assertIn("setInterval(load,1000)", html)
+        self.assertIn("let loading=false", html)
+        self.assertIn("if(loading)return", html)
+        self.assertIn("АВТООБНОВЛЕНИЕ · 1 СЕК", html)
+
+
     def test_public_scanner_page_shows_geo_filters_and_own_subscription(self):
         html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
         self.assertIn("data-scanner.json", html)
