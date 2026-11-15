@@ -39,18 +39,26 @@ def decode_feed(body: bytes) -> str:
 
 
 def normalize_socks_uri(value: str) -> str:
-    """Return a HAPP-compatible SOCKS URI with explicit user-info separator."""
+    """Return a HAPP-compatible SOCKS URI with Base64(user:password) user-info."""
     parsed = urllib.parse.urlsplit(value)
     username = urllib.parse.unquote(parsed.username or "")
     password = urllib.parse.unquote(parsed.password or "")
-    user_info = (
-        urllib.parse.quote(username, safe="") + ":" +
-        urllib.parse.quote(password, safe="") + "@"
-        if username or password else "@"
-    )
+
+    # Accept already-normalized HAPP links without double-encoding them.
+    if username and not password:
+        try:
+            decoded_user_info = base64.b64decode(username, validate=True).decode("utf-8")
+            if ":" in decoded_user_info:
+                username, password = decoded_user_info.split(":", 1)
+        except (ValueError, UnicodeError):
+            pass
+
+    credentials = base64.b64encode(
+        (username + ":" + password).encode("utf-8")
+    ).decode("ascii")
     endpoint = parsed.netloc.rsplit("@", 1)[-1]
     return urllib.parse.urlunsplit((
-        "socks", user_info + endpoint, parsed.path, parsed.query, parsed.fragment
+        "socks", credentials + "@" + endpoint, parsed.path, parsed.query, parsed.fragment
     ))
 
 
