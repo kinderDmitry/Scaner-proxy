@@ -179,7 +179,8 @@ class OutputTests(unittest.TestCase):
                     "services": {"YouTube": {"ok": True, "status": 204}, "Instagram": {"ok": False, "status": 403}}}
             mod.write_outputs([good], site)
             text = (site / "sub" / "all.raw.txt").read_text()
-            self.assertIn(good["uri"], text)
+            expected_uri = mod.subscription_uri(good["uri"], "⚡ Автоподбор")
+            self.assertIn(expected_uri, text)
             self.assertIn("#profile-update-interval: 1", text)
             data = json.loads((site / "data.json").read_text())
             self.assertEqual(data["total"], 1)
