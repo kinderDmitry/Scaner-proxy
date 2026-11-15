@@ -533,14 +533,19 @@ def build(config_path: Path, sing_box: str, site_dir: Path = SITE, workers: int 
         totals["candidates"] += candidate_count
         totals["verified"] += len(verified)
         if not candidate_count:
-            if not existing_catalog.exists():
+            if prefix == "scanner" or not existing_catalog.exists():
                 write_outputs([], site_dir, prefix=prefix)
-            print(f"No candidates from {label}; previous catalog preserved")
+            print(f"No candidates from {label}; " +
+                  ("public scanner catalog cleared to avoid stale nodes" if prefix == "scanner" else "previous catalog preserved"))
             continue
         if not verified:
-            print(f"No {label} candidate passed the HTTPS tunnel check; previous catalog preserved")
-            if not existing_catalog.exists():
+            if prefix == "scanner":
                 write_outputs([], site_dir, prefix=prefix)
+                print(f"No {label} candidate passed the HTTPS tunnel check; stale public nodes removed")
+            else:
+                print(f"No {label} candidate passed the HTTPS tunnel check; previous catalog preserved")
+                if not existing_catalog.exists():
+                    write_outputs([], site_dir, prefix=prefix)
             continue
         write_outputs(verified, site_dir, prefix=prefix)
         print(f"{label}: candidates {candidate_count}; verified {len(verified)}")
