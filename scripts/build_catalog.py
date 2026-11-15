@@ -298,6 +298,31 @@ def check_services(local_port: int) -> dict[str, dict[str, Any]]:
 
 
 
+def happ_via_proxy_get_ping(local_port: int) -> int | None:
+    """Measure HAPP-style Via Proxy GET latency against gstatic generate_204.
+
+    HAPP's Default mode takes the best result from two proxy requests.
+    Each request must complete with HTTP 204 within the configured 10-second timeout.
+    """
+    proxy = "socks5h://127.0.0.1:" + str(local_port)
+    measurements: list[int] = []
+    for _ in range(2):
+        try:
+            result = subprocess.run(
+                ["curl", "--silent", "--show-error", "--output", "/dev/null",
+                 "--write-out", "%{http_code} %{time_total}", "--request", "GET",
+                 "--max-time", "10", "--connect-timeout", "10",
+                 "--proxy", proxy, TEST_URL],
+                capture_output=True, text=True, timeout=12)
+            parts = result.stdout.strip().split()
+            if result.returncode != 0 or len(parts) != 2 or parts[0] != "204":
+                continue
+            measurements.append(max(1, round(float(parts[1]) * 1000)))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+    return min(measurements) if measurements else None
+
+
 def with_location_label(uri: str, label: str) -> str:
     parts = urllib.parse.urlsplit(uri)
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, urllib.parse.quote(label, safe="")))
@@ -331,14 +356,9 @@ def test_candidate(item: dict[str, Any], sing_box: str) -> dict[str, Any] | None
                         time.sleep(0.08)
                 if not ready:
                     return None
-                result = subprocess.run(["curl", "--silent", "--show-error", "--output", "/dev/null",
-                    "--write-out", "%{http_code} %{time_total}", "--max-time", "6", "--connect-timeout", "3",
-                    "--proxy", "socks5h://127.0.0.1:" + str(local_port), TEST_URL],
-                    capture_output=True, text=True, timeout=8)
-                parts = result.stdout.strip().split()
-                if result.returncode != 0 or len(parts) != 2 or parts[0] != "204":
+                latency_ms = happ_via_proxy_get_ping(local_port)
+                if latency_ms is None:
                     return None
-                latency_ms = max(1, round(float(parts[1]) * 1000))
                 speed = subprocess.run(["curl", "--silent", "--show-error", "--output", "/dev/null",
                     "--write-out", "%{http_code} %{speed_download}", "--max-time", "10", "--connect-timeout", "3",
                     "--proxy", "socks5h://127.0.0.1:" + str(local_port), SPEED_URL],
@@ -411,8 +431,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
     prefix = re.sub(r"[^a-z0-9-]", "", prefix.lower()).strip("-")
     verified = sorted(
         verified,
-        key=lambda x: (-float(x.get("speedMbps") or 0),
-                       int(x.get("latencyMs") or 2147483647), x["host"])
+        key=lambda x: (int(x.get("latencyMs") or 2147483647),
+                       -float(x.get("speedMbps") or 0), x["host"])
     )
     groups = {
         "all": verified,
