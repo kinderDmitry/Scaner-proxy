@@ -107,6 +107,13 @@ class WebsiteScriptTests(unittest.TestCase):
         self.assertIn("АВТООБНОВЛЕНИЕ · 1 СЕК", html)
 
 
+    def test_scanner_display_limit_never_changes_happ_subscription_url(self):
+        html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
+        self.assertIn("new URL('sub/scanner.txt',base)", html)
+        self.assertNotIn("scanner-'+value+'.txt", html)
+        self.assertIn("filtered.slice(0,Number(limit))", html)
+        self.assertIn("addEventListener('change',render)", html)
+
     def test_public_scanner_page_shows_geo_filters_and_own_subscription(self):
         html = (ROOT / "website" / "scanner.html").read_text(encoding="utf-8")
         self.assertIn("data-scanner.json", html)
