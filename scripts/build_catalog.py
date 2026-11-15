@@ -447,6 +447,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         body = nl.join([
             f"#profile-title: {title}",
             "#profile-update-interval: 1",
+            "#ping-type proxy",
+            f"#check-url-via-proxy: {TEST_URL}",
         ] + lines)
         if lines:
             body += nl
@@ -466,6 +468,8 @@ def write_outputs(verified: list[dict[str, Any]], site_dir: Path = SITE, prefix:
         body = nl.join([
             f"#profile-title: {title}",
             "#profile-update-interval: 1",
+            "#ping-type proxy",
+            f"#check-url-via-proxy: {TEST_URL}",
         ] + selected)
         if selected:
             body += nl
